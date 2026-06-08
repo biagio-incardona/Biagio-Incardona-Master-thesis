@@ -1,0 +1,23 @@
+pandas
+requests
+numpy
+scipy
+scikit-learn
+statsmodels
+pmdarima
+prophet
+matplotlib
+seaborn
+tqdm
+statsforecast
+mlforecast
+lightgbm
+xgboost
+utilsforecast
+chronos-forecasting
+torch
+transformers
+accelerate
+optuna
+timesfm @ git+https://github.com/google-research/timesfm.git
+tirex @ git+https://github.com/NX-AI/tirex.git
