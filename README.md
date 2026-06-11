@@ -69,13 +69,7 @@ The primary benchmarking script is `scripts/benchmark_ili_national.py`. It suppo
 PYTHONPATH=. nohup python3 scripts/benchmark_ili_national.py --n-jobs -1 > benchmark.log 2>&1 &
 ```
 
-**High-Performance Cloud Execution (Google Colab):**
-The project is optimized for execution on Google Colab to leverage high-VRAM GPUs (T4/L4/A100) and ensure stability for large foundation models.
-
-- **Official Benchmarking Notebook**: [Foundation Model Benchmarking (Colab)](https://colab.research.google.com/drive/1BBRxxBagxGcZ0PsUktyjl0DNhn5VI5m6?usp=sharing)
-- **Runtime Recommendation**: Use a T4 GPU or higher for Phase 2+ models.
-
-**CLI Execution on Colab:**
+**High-Performance Cloud Execution (Google Colab T4):**
 ```bash
 PYTHONPATH=. python3 scripts/benchmark_ili_national.py --model Chronos --num-samples 1000 --batch-size 4
 ```

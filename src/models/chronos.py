@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import torch
 from typing import List, Optional, Any
-from src.models.chronos import ChronosPipeline
+from chronos import ChronosPipeline
 
 from src.models.base import BaseForecaster
 from src.utils.quantiles import samples_to_quantiles

@@ -187,19 +187,34 @@ def evaluate_forecasts(forecasts: pd.DataFrame, truth: pd.DataFrame, train_data:
         
         for (origin, target_date), sub_group in group.groupby(['origin', 'target_date']):
             y_true = sub_group['true_value'].iloc[0]
+            # Sort quantiles to ensure integration order
+            sub_group = sub_group.sort_values('quantile')
             qs = sub_group['quantile'].values
             vals = sub_group['value'].values
             
             # WIS
             wis_list.append(WIS(y_true, qs, vals))
             
-            # Mean Pinball Loss across all 23 quantiles
-            pb_losses = [pinball_loss(y_true, q, v) for q, v in zip(qs, vals)]
+            # Mean Pinball Loss across all quantiles
+            pb_losses = np.array([pinball_loss(y_true, q, v) for q, v in zip(qs, vals)])
             mean_pb = np.mean(pb_losses)
             pinball_list.append(mean_pb)
             
-            # CRPS approximation: 2 * mean(Pinball Loss)
-            crps_list.append(2.0 * mean_pb)
+            # CRPS via trapezoidal integration of 2 * pinball_loss across alpha
+            # Integral over [0,1] of 2 * PL(alpha) d_alpha
+            # We approximate with trapezoids between known quantiles
+            crps_val = 0
+            for i in range(len(qs) - 1):
+                delta_q = qs[i+1] - qs[i]
+                avg_loss = (pb_losses[i+1] + pb_losses[i]) / 2.0
+                crps_val += 2.0 * delta_q * avg_loss
+            
+            # Add boundary pieces (optional but more robust)
+            # From 0 to min(q) and max(q) to 1
+            crps_val += 2.0 * qs[0] * pb_losses[0]
+            crps_val += 2.0 * (1.0 - qs[-1]) * pb_losses[-1]
+            
+            crps_list.append(crps_val)
             
             # 95% Coverage (q=0.025 to q=0.975)
             # Find closest to 0.025 and 0.975

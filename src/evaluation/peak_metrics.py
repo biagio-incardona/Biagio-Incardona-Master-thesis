@@ -2,15 +2,17 @@
 
 import pandas as pd
 import numpy as np
-from typing import Dict
+from typing import Dict, Optional, List
 
-def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame) -> pd.DataFrame:
+def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame, horizon: Optional[int] = None) -> pd.DataFrame:
     """
     Calculates Peak Timing and Peak Intensity error for each model and each season.
     
     Args:
-        forecasts: Long DataFrame [model, origin, target_date, quantile, value]
+        forecasts: Long DataFrame [model, origin, target_date, quantile, value, horizon]
         truth: DataFrame [target_date, true_value]
+        horizon: Optional horizon to filter for (e.g. 1, 2, 4, 8). If None, takes 
+                the latest available forecast for each date.
         
     Returns:
         DataFrame with peak metrics per model and season.
@@ -18,22 +20,23 @@ def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame
     # Use only median forecasts
     point_fcsts = forecasts[np.isclose(forecasts['quantile'], 0.5)].copy()
     
-    # Identify seasons (standard Oct-May roughly)
-    # For simplicity, let's group by the year of the peak
     results = []
     
     # Filter truth for the evaluation period
     truth = truth.set_index('target_date').sort_index()
     
     for model, m_group in point_fcsts.groupby('model'):
-        # We need continuous trajectories. 
-        # For rolling origins, we might have multiple forecasts for the same date.
-        # Let's take the latest forecast available for each date (shortest horizon).
-        m_group = m_group.sort_values('horizon').drop_duplicates('target_date')
+        # Selection logic based on horizon
+        if horizon is not None:
+            # Filter for specific horizon
+            m_group = m_group[m_group['horizon'] == horizon]
+        else:
+            # Take the latest forecast available for each date (shortest horizon)
+            m_group = m_group.sort_values('horizon').drop_duplicates('target_date')
+        
         m_group = m_group.set_index('target_date').sort_index()
         
-        # Calculate peaks per season (roughly)
-        # For this project, we have 2023-2024 and 2024-2025
+        # Calculate peaks per season
         seasons = [
             ('2023-10-01', '2024-06-01'),
             ('2024-10-01', '2025-06-01')
@@ -53,13 +56,14 @@ def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame
             pred_peak_val = s_pred['value'].max()
             
             timing_error = (pred_peak_date - true_peak_date).days / 7.0 # weeks
-            intensity_error = pred_peak_val - true_peak_val # relative error
+            intensity_error_rel = (pred_peak_val - true_peak_val) / true_peak_val
             
             results.append({
                 'model': model,
                 'season': f"{start[:4]}-{end[:4]}",
+                'horizon': horizon if horizon is not None else 'latest',
                 'peak_timing_error_weeks': timing_error,
-                'peak_intensity_error_abs': intensity_error
+                'peak_intensity_error_rel': intensity_error_rel
             })
             
     return pd.DataFrame(results)
