@@ -156,13 +156,17 @@ def main():
                     n_jobs=current_n_jobs
                 )
             
-            forecasts['model'] = name
+            model_display_name = name
+            if name == 'Chronos':
+                model_display_name = f"{name}-{args.model_size.capitalize()}"
+            
+            forecasts['model'] = model_display_name
             all_forecast_dfs.append(forecasts)
             
             # Save intermediate results for this model
-            model_file = os.path.join(output_dir, f"{name.lower()}_forecasts.csv")
+            model_file = os.path.join(output_dir, f"{model_display_name.lower()}_forecasts.csv")
             forecasts.to_csv(model_file, index=False)
-            print(f"Saved {name} forecasts to {model_file}")
+            print(f"Saved {model_display_name} forecasts to {model_file}")
             
             # Explicitly free memory
             del model
@@ -202,14 +206,22 @@ def main():
     full_forecasts.to_csv(full_forecast_file, index=False)
     
     print("Calculating metrics...")
-    # Pass train_data for MASE
-    metrics_df = evaluate_forecasts(full_forecasts, df_nat, train_data=df_nat)
+    # Pass train_data for MASE (strictly pre-backtest to avoid leakage)
+    # Using data before the first origin to calculate the naive seasonal scale
+    train_slice = df_nat[df_nat['ds'] < origins[0]].copy()
+    metrics_df = evaluate_forecasts(full_forecasts, df_nat, train_data=train_slice)
     
     # Calculate Peak Metrics
     print("Calculating seasonal peak metrics...")
     # Prepare truth for peak metrics (needs target_date and true_value)
     peak_truth = df_nat.rename(columns={'ds': 'target_date', 'y': 'true_value'})
-    peak_metrics_df = calculate_seasonal_peak_metrics(full_forecasts, peak_truth)
+    
+    # Calculate for each horizon and for 'latest'
+    peak_results = []
+    for h in [None, 1, 2, 4, 8]:
+        h_peak = calculate_seasonal_peak_metrics(full_forecasts, peak_truth, horizon=h)
+        peak_results.append(h_peak)
+    peak_metrics_df = pd.concat(peak_results, ignore_index=True)
     
     if not metrics_df.empty:
         metrics_file = os.path.join(output_dir, "all_models_metrics.csv")
