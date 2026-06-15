@@ -5,14 +5,16 @@ This project evaluates zero-shot foundation models (Chronos, TimesFM, etc.) agai
 
 ## Project Structure
 
-- `data/`: Contains raw and processed data (ignored by git).
+- `data/`: Contains raw and processed ILI data.
 - `src/`: Source code for the project.
     - `data/`: Data ingestion and preprocessing scripts.
     - `models/`: Implementation of baseline and foundation models.
     - `evaluation/`: Backtesting engine and metrics.
     - `utils/`: Utility functions.
-- `results/`: Output of evaluations and model forecasts (ignored by git).
-- `scripts/`: Entry point scripts for running experiments.
+- `results/`: Output directory for evaluation results and forecasts (created during execution).
+- `benchmark_ili_national.py`: Main unified benchmarking script for national ILI series.
+- `colab_benchmarking.ipynb`: Notebook for running experiments on Google Colab.
+- `requirements.txt`: Python dependencies.
 
 ## Setup
 
@@ -43,15 +45,9 @@ Foundation models are downloaded automatically from the HuggingFace Hub during t
 - **TimesFM (2.5)**: ~1GB.
 - **TiRex**: ~150MB.
 
-To verify installation and trigger downloads:
-```bash
-PYTHONPATH=. python3 scripts/test_chronos.py
-PYTHONPATH=. python3 scripts/test_timesfm.py
-```
-
 ## Benchmarking CLI
 
-The primary benchmarking script is `scripts/benchmark_ili_national.py`. It supports several flags for customization:
+The primary benchmarking script is `benchmark_ili_national.py`. It supports several flags for customization:
 
 - `--model <name>`: Run only a specific model (e.g., `Chronos`, `LightGBM`).
 - `--append`: Merge new results into existing `all_models_forecasts.csv` without overwriting results for other models. Useful for incremental testing.
@@ -66,17 +62,17 @@ The primary benchmarking script is `scripts/benchmark_ili_national.py`. It suppo
 
 **Full National Benchmark (Background):**
 ```bash
-PYTHONPATH=. nohup python3 scripts/benchmark_ili_national.py --n-jobs -1 > benchmark.log 2>&1 &
+PYTHONPATH=. nohup python3 benchmark_ili_national.py --n-jobs -1 > benchmark.log 2>&1 &
 ```
 
 **High-Performance Cloud Execution (Google Colab T4):**
 ```bash
-PYTHONPATH=. python3 scripts/benchmark_ili_national.py --model Chronos --num-samples 1000 --batch-size 4
+PYTHONPATH=. python3 benchmark_ili_national.py --model Chronos --num-samples 1000 --batch-size 4
 ```
 
 **Local Mac Execution (Optimized for Apple Silicon):**
 ```bash
-PYTHONPATH=. python3 scripts/benchmark_ili_national.py --model-size small --num-samples 200 --batch-size 1
+PYTHONPATH=. python3 benchmark_ili_national.py --model-size small --num-samples 200 --batch-size 1
 ```
 
 *Note: On Apple Silicon Macs, models automatically use the **MPS (Metal)** backend. On NVIDIA GPUs, they use **CUDA** with float16 optimization.*
