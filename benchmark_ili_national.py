@@ -30,10 +30,10 @@ from src.evaluation.peak_metrics import calculate_seasonal_peak_metrics
 from src.utils.quantiles import INFLUCAST_QUANTILES
 
 def main():
-    parser = argparse.ArgumentParser(description='National ILI Model Benchmarking (Phase 2)')
+    parser = argparse.ArgumentParser(description='National ILI Model Benchmarking')
     parser.add_argument('--dry-run', action='store_true', help='Run a quick check with one model and few origins')
     parser.add_argument('--model', type=str, default=None, help='Run only a specific model')
-    parser.add_argument('--append', action='store_true', help='Append to existing results/phase2/all_models_forecasts.csv')
+    parser.add_argument('--append', action='store_true', help='Append to existing results/national/all_models_forecasts.csv')
     parser.add_argument('--n-jobs', type=int, default=-1, help='Number of jobs for parallel execution (default: -1)')
     parser.add_argument('--model-size', type=str, default='large', 
                         choices=['tiny', 'small', 'base', 'large'],
@@ -98,7 +98,7 @@ def main():
     else:
         models_to_run = all_models
 
-    output_dir = 'results/phase2'
+    output_dir = 'results/national'
     os.makedirs(output_dir, exist_ok=True)
     
     existing_forecasts = None

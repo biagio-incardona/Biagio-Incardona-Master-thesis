@@ -5,21 +5,22 @@ This project evaluates zero-shot foundation models (Chronos, TimesFM, etc.) agai
 
 ## Project Structure
 
-- `data/`: Contains raw and processed ILI data.
-- `src/`: Source code for the project.
-    - `data/`: Data ingestion and preprocessing scripts.
-    - `models/`: Implementation of baseline and foundation models.
-    - `evaluation/`: Backtesting engine and metrics.
-    - `utils/`: Utility functions.
-- `results/`: Output directory for evaluation results and forecasts (created during execution).
-- `benchmark_ili_national.py`: Main unified benchmarking script for national ILI series.
-- `colab_benchmarking.ipynb`: Notebook for running experiments on Google Colab.
+- `data/`: ILI data storage.
+    - `raw/`: Historical CSV files from Influcast organized by season.
+    - `processed/`: Cleaned and aggregated `ili_gold.csv`.
+- `src/`: Source code.
+    - `data/`: Scripts for data `ingestion.py` and `preprocessing.py`.
+    - `models/`: Implementations for `baselines.py` (statistical), `ml.py` (LightGBM/XGBoost), and Foundation Models (`chronos.py`, `timesfm.py`, `tirex.py`, `timegpt.py`).
+    - `evaluation/`: Backtesting engine (`backtest.py`), accuracy `metrics.py`, and epidemic `peak_metrics.py`.
+    - `utils/`: Common utilities like `quantiles.py`.
+- `benchmark_ili_national.py`: Main entry point for running benchmarks.
 - `requirements.txt`: Python dependencies.
+- `results/`: (Generated) Output directory for forecasts and evaluation summaries.
 
 ## Setup
 
 ### 1. Environment and Python Dependencies
-This project requires **Python 3.11** (required for TimesFM 2.0). 
+This project requires **Python 3.11** (required for TimesFM 2.5). 
 Create a virtual environment and install the required Python packages:
 ```bash
 python3.11 -m venv venv
@@ -49,14 +50,14 @@ Foundation models are downloaded automatically from the HuggingFace Hub during t
 
 The primary benchmarking script is `benchmark_ili_national.py`. It supports several flags for customization:
 
-- `--model <name>`: Run only a specific model (e.g., `Chronos`, `LightGBM`).
-- `--append`: Merge new results into existing `all_models_forecasts.csv` without overwriting results for other models. Useful for incremental testing.
+- `--model <name>`: Run only a specific model (e.g., `Chronos`, `LightGBM`). Supported: `Naive`, `SeasonalNaive`, `ETS`, `ARIMA`, `SARIMA`, `Prophet`, `LightGBM`, `XGBoost`, `Chronos`, `TimesFM`, `TiRex`.
+- `--append`: Merge new results into existing `results/national/all_models_forecasts.csv` without overwriting results for other models. Useful for incremental testing.
 - `--tune`: Enable Optuna hyperparameter tuning for ML models (LightGBM/XGBoost). This significantly increases execution time but improves accuracy.
 - `--n-jobs <N>`: Control the number of CPU cores used for parallel execution. Use `-1` for all available cores.
 - `--model-size <size>`: Choose the size of foundation models where applicable (e.g., Chronos). Options: `tiny`, `small`, `base`, `large` (default: `large`).
 - `--num-samples <N>`: Control the precision of foundation models (default: 1000). Lower values (e.g., 200) are faster for testing.
 - `--batch-size <N>`: Control the memory/speed trade-off (default: 1). Use 4-8 on Colab for max speed.
-- `--dry-run`: Run a quick execution with minimal origins and horizons to verify the pipeline.
+- `--dry-run`: Run a quick execution with minimal origins (2) and horizons (1, 2) to verify the pipeline.
 
 ### Usage Examples
 
@@ -79,7 +80,7 @@ PYTHONPATH=. python3 benchmark_ili_national.py --model-size small --num-samples 
 
 ## Performance & Resource Management
 
-- **Vectorized Backtesting**: Foundation models use a custom `predict_batch` implementation that processes multiple origins in parallel on the GPU/MPS, drastically reducing execution time.
+- **Vectorized Backtesting**: Foundation models (Chronos, TimesFM) use a custom `predict_batch` implementation that processes multiple origins in parallel on the GPU/MPS, drastically reducing execution time.
 - **Memory Chunking**: To prevent Out-Of-Memory (OOM) errors, batch processing is performed in chunks with explicit cache clearing (`torch.cuda.empty_cache()` or `torch.mps.empty_cache()`).
 - **Sequential Execution Guard**: To prevent OOM errors on machines with limited RAM (e.g., 16GB), Foundation Models (Chronos, TimesFM, TiRex) are automatically restricted to sequential execution (`n_jobs=1`) across CPU cores, as they leverage internal GPU parallelism instead.
 - **SARIMA Optimization**: Seasonal Auto-ARIMA is optimized for speed and stability by setting `max_P=1`, `max_Q=1`, and `max_D=1`. This prevents the model from exploring excessively complex seasonal structures that often lead to convergence failures or extreme slowdowns on epidemic data.
@@ -89,7 +90,7 @@ PYTHONPATH=. python3 benchmark_ili_national.py --model-size small --num-samples 
 
 - Ingest Italian ILI data from Influcast.
 - Establish classical baselines (ARIMA, SARIMA, ETS, etc.).
-- Evaluate zero-shot performance of Time Series Foundation Models.
+- Evaluate zero-shot performance of Time Series Foundation Models (Chronos, TimesFM 2.5, TiRex).
 - Analyze regional vs. national generalizability.
 
 ## Technical Decisions & Optimizations
@@ -102,8 +103,8 @@ To handle the large number of forecast origins (weekly rolling origins over mult
 
 ### Model Configurations
 - **AutoARIMA/SARIMA**: Optimized for speed by enabling `stepwise` search and `approximation`.
-- **ML Baselines (LightGBM/XGBoost)**: Implemented using `MLForecast` with recursive lags and **Conformal Prediction** to generate probabilistic outputs.
-- **Foundation Models**: Includes **Chronos**, **TimesFM (2.0)**, and **TiRex (xLSTM)**. (TimeGPT is excluded due to closed-beta/sales API requirements).
+- **ML Baselines (LightGBM/XGBoost)**: Implemented using `MLForecast` with recursive lags and **Conformal Prediction** (5 windows) to generate probabilistic outputs.
+- **Foundation Models**: Includes **Chronos**, **TimesFM (2.5)**, and **TiRex (xLSTM)**. (TimeGPT is excluded due to closed-beta/sales API requirements).
 - **Probabilistic Forecasting**: All models produce a standardized **23-quantile output** (from 0.01 to 0.99), aligned with the CDC/Influcast standard for epidemic forecasting. This allows for rigorous evaluation using CRPS, WIS, and Pinball Loss.
 
 ### Scalability
