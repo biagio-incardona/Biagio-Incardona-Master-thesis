@@ -10,6 +10,11 @@ import pandas as pd
 import numpy as np
 import gc
 import warnings
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from src.models import (
     NaiveForecaster, 
     SeasonalNaiveForecaster, 
