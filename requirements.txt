@@ -21,3 +21,4 @@ accelerate
 optuna
 timesfm @ git+https://github.com/google-research/timesfm.git
 tirex @ git+https://github.com/NX-AI/tirex.git
+nixtla
