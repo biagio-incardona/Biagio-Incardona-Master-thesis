@@ -9,7 +9,7 @@ from statsforecast.models import (
     SeasonalNaive, 
     AutoETS, 
     AutoARIMA,
-    Drift,
+    RandomWalkWithDrift,
     WindowAverage
 )
 from prophet import Prophet
@@ -74,7 +74,12 @@ class StatsForecastWrapper(BaseForecaster):
                 levels.append(level)
             levels = sorted(list(set(levels)))
             
-            forecasts = sf.forecast(df=sf_df, h=horizon, level=levels)
+            try:
+                forecasts = sf.forecast(df=sf_df, h=horizon, level=levels)
+            except Exception as e:
+                # Fallback to point forecast if intervals fail
+                forecasts = sf.forecast(df=sf_df, h=horizon)
+                quantiles = None
         else:
             forecasts = sf.forecast(df=sf_df, h=horizon)
             
@@ -174,7 +179,7 @@ class DriftForecaster(StatsForecastWrapper):
     
     def __init__(self):
         """Initializes DriftForecaster."""
-        super().__init__(Drift())
+        super().__init__(RandomWalkWithDrift())
 
 
 class MovingAverageForecaster(StatsForecastWrapper):

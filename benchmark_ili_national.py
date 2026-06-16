@@ -49,7 +49,9 @@ def main():
     parser.add_argument('--step', type=int, default=4, help='Step size between origins (default: 4)')
     parser.add_argument('--horizons', type=str, default='1,2,4,8', help='Comma-separated horizons (default: 1,2,4,8)')
     parser.add_argument('--model-size', type=str, default='large', 
-                        choices=['tiny', 'small', 'base', 'large'],
+                        choices=['tiny', 'small', 'base', 'large', 
+                                 'v2-tiny', 'v2-small', 'v2-base', 'v2-large',
+                                 'bolt-tiny', 'bolt-small', 'bolt-base'],
                         help='Size of foundation models (Chronos, etc.)')
     parser.add_argument('--num-samples', type=int, default=1000, help='Number of samples for foundation models')
     parser.add_argument('--batch-size', type=int, default=1, help='Batch size for foundation model inference')

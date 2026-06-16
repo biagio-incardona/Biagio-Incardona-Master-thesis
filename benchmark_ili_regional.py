@@ -95,6 +95,9 @@ def main():
         models_to_run = all_models
 
     sequential_models = ['Chronos', 'TimesFM', 'TiRex']
+    
+    completed_models = []
+    failed_models = []
 
     for region in regions:
         print(f"\n" + "#"*60)
@@ -132,11 +135,15 @@ def main():
                 forecasts['region'] = region
                 region_forecasts.append(forecasts)
                 
+                if name not in completed_models:
+                    completed_models.append(name)
+                
                 del model
                 if torch.cuda.is_available(): torch.cuda.empty_cache()
                 gc.collect()
             except Exception as e:
                 print(f"Error in {name} for {region}: {e}")
+                failed_models.append({'model': name, 'region': region, 'error': str(e)})
 
         if region_forecasts:
             reg_full_fcst = pd.concat(region_forecasts, ignore_index=True)
@@ -148,6 +155,30 @@ def main():
             reg_metrics = evaluate_forecasts(reg_full_fcst, region_df, train_data=train_slice)
             reg_metrics['region'] = region
             reg_metrics.to_csv(os.path.join(output_dir, f"{region}_metrics.csv"), index=False)
+
+    # Save run_info.json
+    import json
+    run_info = {
+        'period_covered': f"{df_reg['ds'].min().date()} to {df_reg['ds'].max().date()}",
+        'num_regions': len(regions),
+        'horizons': horizons,
+        'completed_models': completed_models,
+        'failed_models': failed_models
+    }
+    with open(os.path.join(output_dir, "run_info.json"), 'w') as f:
+        json.dump(run_info, f, indent=4)
+
+    # Generate RUN_REPORT.md
+    report_file = os.path.join(output_dir, "RUN_REPORT.md")
+    with open(report_file, 'w') as f:
+        f.write("# Regional ILI Benchmark Run Report\n\n")
+        f.write(f"- **Period Covered:** {df_reg['ds'].min().date()} to {df_reg['ds'].max().date()}\n")
+        f.write(f"- **Regions Evaluated:** {len(regions)}\n")
+        f.write(f"- **Horizons:** {horizons}\n")
+        f.write(f"- **Completed Models:** {', '.join(completed_models)}\n")
+        f.write(f"- **Failed Instances:** {len(failed_models)}\n")
+        for fm in failed_models:
+            f.write(f"  - {fm['model']} in {fm['region']}: {fm['error']}\n")
 
     # Generate Aggregate Regional Plots
     print("\nGenerating regional aggregate visualizations...")
