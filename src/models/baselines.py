@@ -8,7 +8,9 @@ from statsforecast.models import (
     Naive, 
     SeasonalNaive, 
     AutoETS, 
-    AutoARIMA
+    AutoARIMA,
+    Drift,
+    WindowAverage
 )
 from prophet import Prophet
 
@@ -165,6 +167,26 @@ class SARIMAForecaster(StatsForecastWrapper):
             max_Q=1,
             max_D=1
         ))
+
+
+class DriftForecaster(StatsForecastWrapper):
+    """Drift forecaster (random walk with drift)."""
+    
+    def __init__(self):
+        """Initializes DriftForecaster."""
+        super().__init__(Drift())
+
+
+class MovingAverageForecaster(StatsForecastWrapper):
+    """Moving Average forecaster (Window=52)."""
+    
+    def __init__(self, window_size: int = 52):
+        """Initializes MovingAverageForecaster.
+        
+        Args:
+            window_size: Size of the moving window.
+        """
+        super().__init__(WindowAverage(window_size=window_size))
 
 
 class ProphetForecaster(BaseForecaster):

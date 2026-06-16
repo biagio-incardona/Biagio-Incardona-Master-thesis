@@ -3,8 +3,15 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 *.pyc
+*.csv
 venv/
 env/
 .idea/
 .vscode/
 venv311/
+email_exchange.md
+first_meeting_notes.md
+GAP_ANALYSIS.md
+DEVELOPMENT_LOG.md
+BUILD_DOCS.md
+TECHNICAL_GAPS.md

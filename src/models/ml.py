@@ -10,6 +10,8 @@ from mlforecast.utils import PredictionIntervals
 from utilsforecast.preprocessing import fill_gaps
 import lightgbm as lgb
 import xgboost as xgb
+from catboost import CatBoostRegressor
+from sklearn.linear_model import Ridge
 
 from src.models.base import BaseForecaster
 
@@ -245,4 +247,44 @@ class XGBoostForecaster(MLForecastWrapper):
             'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
             'subsample': trial.suggest_float('subsample', 0.5, 1.0),
             'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+        }
+
+
+class CatBoostForecaster(MLForecastWrapper):
+    """CatBoost forecaster."""
+    
+    def __init__(self):
+        """Initializes CatBoostForecaster with default params."""
+        model = CatBoostRegressor(
+            silent=True,
+            random_state=42,
+            thread_count=1
+        )
+        super().__init__(model)
+
+    def _suggest_params(self, trial):
+        """Suggests hyperparameters for CatBoost."""
+        return {
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+            'iterations': trial.suggest_int('iterations', 50, 500),
+            'depth': trial.suggest_int('depth', 3, 10),
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 1.0, 10.0),
+            'bagging_temperature': trial.suggest_float('bagging_temperature', 0.0, 1.0),
+        }
+
+
+class RidgeForecaster(MLForecastWrapper):
+    """Ridge regression forecaster (Linear model on lags)."""
+    
+    def __init__(self):
+        """Initializes RidgeForecaster with default params."""
+        model = Ridge(
+            random_state=42
+        )
+        super().__init__(model)
+
+    def _suggest_params(self, trial):
+        """Suggests hyperparameters for Ridge."""
+        return {
+            'alpha': trial.suggest_float('alpha', 0.001, 100.0, log=True),
         }

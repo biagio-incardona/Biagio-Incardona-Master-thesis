@@ -36,11 +36,15 @@ def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame
         
         m_group = m_group.set_index('target_date').sort_index()
         
-        # Calculate peaks per season
-        seasons = [
-            ('2023-10-01', '2024-06-01'),
-            ('2024-10-01', '2025-06-01')
-        ]
+        # Automatically detect seasons: October to May
+        years = sorted(list(set(truth.index.year)))
+        seasons = []
+        for y in years:
+            start = f"{y}-10-01"
+            end = f"{y+1}-06-01"
+            # Only add if we have some data in this range
+            if not truth.loc[start:end].empty:
+                seasons.append((start, end))
         
         for start, end in seasons:
             s_truth = truth.loc[start:end]

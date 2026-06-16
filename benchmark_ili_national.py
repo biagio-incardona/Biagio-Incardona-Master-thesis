@@ -18,12 +18,16 @@ except ImportError:
 from src.models import (
     NaiveForecaster, 
     SeasonalNaiveForecaster, 
+    DriftForecaster,
+    MovingAverageForecaster,
     ETSForecaster, 
     ARIMAForecaster, 
     SARIMAForecaster, 
     ProphetForecaster,
     LightGBMForecaster,
     XGBoostForecaster,
+    CatBoostForecaster,
+    RidgeForecaster,
     ChronosForecaster,
     TimesFMForecaster,
     TiRexForecaster,
@@ -33,6 +37,7 @@ from src.evaluation.backtest import run_backtest
 from src.evaluation.metrics import evaluate_forecasts
 from src.evaluation.peak_metrics import calculate_seasonal_peak_metrics
 from src.utils.quantiles import INFLUCAST_QUANTILES
+from src.utils.visualizations import plot_national_trajectories, plot_best_model_heatmap
 
 def main():
     parser = argparse.ArgumentParser(description='National ILI Model Benchmarking')
@@ -40,12 +45,15 @@ def main():
     parser.add_argument('--model', type=str, default=None, help='Run only a specific model')
     parser.add_argument('--append', action='store_true', help='Append to existing results/national/all_models_forecasts.csv')
     parser.add_argument('--n-jobs', type=int, default=-1, help='Number of jobs for parallel execution (default: -1)')
+    parser.add_argument('--min-train', type=int, default=156, help='Minimum training weeks (default: 156 = 3 years)')
+    parser.add_argument('--step', type=int, default=4, help='Step size between origins (default: 4)')
+    parser.add_argument('--horizons', type=str, default='1,2,4,8', help='Comma-separated horizons (default: 1,2,4,8)')
     parser.add_argument('--model-size', type=str, default='large', 
                         choices=['tiny', 'small', 'base', 'large'],
                         help='Size of foundation models (Chronos, etc.)')
     parser.add_argument('--num-samples', type=int, default=1000, help='Number of samples for foundation models')
     parser.add_argument('--batch-size', type=int, default=1, help='Batch size for foundation model inference')
-    parser.add_argument('--tune', action='store_true', help='Tune hyperparameters for ML models (LightGBM/XGBoost)')
+    parser.add_argument('--tune', action='store_true', help='Tune hyperparameters for ML models')
     args = parser.parse_args()
 
     # Load data
@@ -57,17 +65,26 @@ def main():
     df_nat = df[df['region'] == 'italia'].copy().sort_values('ds')
     print(f"Loaded {len(df_nat)} weeks of national data.")
         
-    # Define origins: Sundays for the last two full seasons
-    # 2023-10-01 to 2025-04-20
-    all_origins = pd.date_range(start='2023-10-01', end='2025-04-20', freq='W-SUN')
-    origins = all_origins[all_origins.isin(df_nat['ds'])]
+    # Dynamic Origin Generation
+    horizons = [int(h) for h in args.horizons.split(',')]
+    max_horizon = max(horizons)
+    
+    # Origins start after min-train and end before max-horizon from the end
+    available_dates = df_nat['ds'].values
+    start_idx = args.min_train
+    end_idx = len(available_dates) - max_horizon
+    
+    if start_idx >= end_idx:
+        print(f"Error: Not enough data for min_train={args.min_train} and max_horizon={max_horizon}")
+        return
+        
+    origin_indices = range(start_idx, end_idx, args.step)
+    origins = pd.to_datetime(available_dates[origin_indices])
     
     if args.dry_run:
         print("!!! DRY RUN MODE ENABLED !!!")
         origins = origins[:2]
         horizons = [1, 2]
-    else:
-        horizons = [1, 2, 4, 8]
         
     print(f"Total origins to evaluate: {len(origins)}")
     print(f"Horizons: {horizons}")
@@ -75,16 +92,19 @@ def main():
     quantiles = INFLUCAST_QUANTILES
     
     # Model Registry
-    # Some models can run in parallel (n_jobs=-1), others must be sequential
     all_models = {
         'Naive': (NaiveForecaster, {}),
         'SeasonalNaive': (SeasonalNaiveForecaster, {}),
+        'Drift': (DriftForecaster, {}),
+        'MovingAverage': (MovingAverageForecaster, {'window_size': 52}),
         'ETS': (ETSForecaster, {}),
         'ARIMA': (ARIMAForecaster, {}),
         'SARIMA': (SARIMAForecaster, {}),
         'Prophet': (ProphetForecaster, {}),
         'LightGBM': (LightGBMForecaster, {}),
         'XGBoost': (XGBoostForecaster, {}),
+        'CatBoost': (CatBoostForecaster, {}),
+        'Ridge': (RidgeForecaster, {}),
         'Chronos': (ChronosForecaster, {'model_name': args.model_size, 'num_samples': args.num_samples, 'batch_size': args.batch_size}),
         'TimesFM': (TimesFMForecaster, {'batch_size': args.batch_size}),
         'TiRex': (TiRexForecaster, {'batch_size': args.batch_size}),
@@ -118,9 +138,11 @@ def main():
             print(f"Warning: --append requested but {full_forecast_file} does not exist. Starting fresh.")
 
     all_forecast_dfs = []
+    failed_models = []
+    completed_models = []
     
     # Foundation models that require sequential execution to avoid OOM
-    sequential_models = ['Chronos', 'TimesFM', 'TiRex']
+    sequential_models = ['Chronos', 'TimesFM', 'TiRex', 'TimeGPT']
 
     for name, (model_cls, kwargs) in models_to_run.items():
         print(f"\n" + "="*50)
@@ -137,7 +159,7 @@ def main():
             model = model_cls(**kwargs)
             
             # Tuning logic for ML models
-            if args.tune and name in ['LightGBM', 'XGBoost']:
+            if args.tune and name in ['LightGBM', 'XGBoost', 'CatBoost', 'Ridge']:
                 print(f"Hyperparameter tuning enabled for {name}...")
                 # Training data for tuning is everything before the first backtest origin
                 train_df = df_nat[df_nat['ds'] < origins[0]].copy()
@@ -173,6 +195,8 @@ def main():
             forecasts.to_csv(model_file, index=False)
             print(f"Saved {model_display_name} forecasts to {model_file}")
             
+            completed_models.append(model_display_name)
+            
             # Explicitly free memory
             del model
             if torch.cuda.is_available():
@@ -183,9 +207,10 @@ def main():
             
         except Exception as e:
             print(f"CRITICAL ERROR running {name}: {e}")
+            failed_models.append({'model': name, 'error': str(e)})
             import traceback
             traceback.print_exc()
-    
+
     if not all_forecast_dfs:
         print("No results generated.")
         return
@@ -214,7 +239,25 @@ def main():
     # Pass train_data for MASE (strictly pre-backtest to avoid leakage)
     # Using data before the first origin to calculate the naive seasonal scale
     train_slice = df_nat[df_nat['ds'] < origins[0]].copy()
-    metrics_df = evaluate_forecasts(full_forecasts, df_nat, train_data=train_slice)
+    metrics_df = evaluate_forecasts(full_forecasts, df_nat, train_data=train_slice, aggregate=True)
+    
+    # Save per-origin metrics
+    print("Calculating metrics by origin...")
+    metrics_by_origin_df = evaluate_forecasts(full_forecasts, df_nat, train_data=train_slice, aggregate=False)
+    metrics_by_origin_file = os.path.join(output_dir, "backtest_metrics_by_origin.csv")
+    metrics_by_origin_df.to_csv(metrics_by_origin_file, index=False)
+
+    # Save run_info.json
+    import json
+    run_info = {
+        'period_covered': f"{df_nat['ds'].min().date()} to {df_nat['ds'].max().date()}",
+        'num_origins': len(origins),
+        'horizons': horizons,
+        'completed_models': completed_models,
+        'failed_models': failed_models
+    }
+    with open(os.path.join(output_dir, "run_info.json"), 'w') as f:
+        json.dump(run_info, f, indent=4)
     
     # Calculate Peak Metrics
     print("Calculating seasonal peak metrics...")
@@ -227,7 +270,35 @@ def main():
         h_peak = calculate_seasonal_peak_metrics(full_forecasts, peak_truth, horizon=h)
         peak_results.append(h_peak)
     peak_metrics_df = pd.concat(peak_results, ignore_index=True)
+
+    # Generate RUN_REPORT.md
+    report_file = os.path.join(output_dir, "RUN_REPORT.md")
+    with open(report_file, 'w') as f:
+        f.write("# National ILI Benchmark Run Report\n\n")
+        f.write(f"- **Period Covered:** {df_nat['ds'].min().date()} to {df_nat['ds'].max().date()}\n")
+        f.write(f"- **Number of Origins:** {len(origins)}\n")
+        f.write(f"- **Horizons:** {horizons}\n")
+        f.write(f"- **Completed Models:** {', '.join(completed_models)}\n")
+        f.write(f"- **Failed Models:** {len(failed_models)}\n")
+        for fm in failed_models:
+            f.write(f"  - {fm['model']}: {fm['error']}\n")
+        f.write("\n## Summary Metrics (MAE/WIS)\n\n")
+        if not metrics_df.empty:
+            summary = metrics_df.groupby('model')[['MAE', 'WIS']].mean().sort_values('MAE')
+            f.write(summary.to_markdown())
+        
+    print(f"Run report saved to {report_file}")
     
+    # Generate Visualizations
+    print("Generating visualizations...")
+    vis_dir = os.path.join(output_dir, "plots")
+    # For trajectories, use truth with renamed columns
+    plot_truth = df_nat.rename(columns={'ds': 'target_date', 'y': 'true_value'})
+    plot_national_trajectories(full_forecasts, plot_truth, vis_dir, horizon=4)
+    plot_best_model_heatmap(metrics_df, vis_dir, metric_name='MAE')
+    plot_best_model_heatmap(metrics_df, vis_dir, metric_name='WIS')
+    print(f"Visualizations saved to {vis_dir}")
+
     if not metrics_df.empty:
         metrics_file = os.path.join(output_dir, "all_models_metrics.csv")
         metrics_df.to_csv(metrics_file, index=False)

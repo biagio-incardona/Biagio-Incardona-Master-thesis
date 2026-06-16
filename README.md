@@ -7,15 +7,20 @@ This project evaluates zero-shot foundation models (Chronos, TimesFM, etc.) agai
 
 - `data/`: ILI data storage.
     - `raw/`: Historical CSV files from Influcast organized by season.
-    - `processed/`: Cleaned and aggregated `ili_gold.csv`.
+    - `processed/`: 
+        - `ili_gold.csv`: Cleaned and aggregated master dataset.
+        - `source_files_index.csv`: Manifest tracking the exact source file used for every season and region.
 - `src/`: Source code.
     - `data/`: Scripts for data `ingestion.py` and `preprocessing.py`.
     - `models/`: Implementations for `baselines.py` (statistical), `ml.py` (LightGBM/XGBoost), and Foundation Models (`chronos.py`, `timesfm.py`, `tirex.py`, `timegpt.py`).
     - `evaluation/`: Backtesting engine (`backtest.py`), accuracy `metrics.py`, and epidemic `peak_metrics.py`.
     - `utils/`: Common utilities like `quantiles.py`.
-- `benchmark_ili_national.py`: Main entry point for running benchmarks.
+- `benchmark_ili_national.py`: Main entry point for national benchmarks.
+- `benchmark_ili_regional.py`: Entry point for regional benchmarks across all 22 geographic areas.
 - `requirements.txt`: Python dependencies.
 - `results/`: (Generated) Output directory for forecasts and evaluation summaries.
+    - `national/`: Standardized outputs for national runs (`RUN_REPORT.md`, `all_models_metrics.csv`, etc.).
+    - `regional/`: Standardized outputs for regional runs.
 
 ## Setup
 
@@ -46,45 +51,56 @@ Foundation models are downloaded automatically from the HuggingFace Hub during t
 - **TimesFM (2.5)**: ~1GB.
 - **TiRex**: ~150MB.
 
+### 4. Data Preparation
+Before running benchmarks, ingest and preprocess the latest data from the Influcast repository:
+```bash
+# 1. Automated ingestion of all 22 regions/provinces (2003-present)
+python3 src/data/ingestion.py
+
+# 2. Preprocess with Epidemic Time-Indexing (Default)
+python3 src/data/preprocessing.py --time-index epidemic
+```
+
 ## Benchmarking CLI
 
-The primary benchmarking script is `benchmark_ili_national.py`. It supports several flags for customization:
+The primary benchmarking scripts are `benchmark_ili_national.py` and `benchmark_ili_regional.py`. They support several flags for customization:
 
-- `--model <name>`: Run only a specific model (e.g., `Chronos`, `LightGBM`). Supported: `Naive`, `SeasonalNaive`, `ETS`, `ARIMA`, `SARIMA`, `Prophet`, `LightGBM`, `XGBoost`, `Chronos`, `TimesFM`, `TiRex`.
-- `--append`: Merge new results into existing `results/national/all_models_forecasts.csv` without overwriting results for other models. Useful for incremental testing.
-- `--tune`: Enable Optuna hyperparameter tuning for ML models (LightGBM/XGBoost). This significantly increases execution time but improves accuracy.
-- `--n-jobs <N>`: Control the number of CPU cores used for parallel execution. Use `-1` for all available cores.
-- `--model-size <size>`: Choose the size of foundation models where applicable (e.g., Chronos). Options: `tiny`, `small`, `base`, `large` (default: `large`).
-- `--num-samples <N>`: Control the precision of foundation models (default: 1000). Lower values (e.g., 200) are faster for testing.
-- `--batch-size <N>`: Control the memory/speed trade-off (default: 1). Use 4-8 on Colab for max speed.
-- `--dry-run`: Run a quick execution with minimal origins (2) and horizons (1, 2) to verify the pipeline.
+- `--model <name>`: Run only a specific model (e.g., `Chronos`). Supported: `Naive`, `SeasonalNaive`, `Drift`, `MovingAverage`, `ETS`, `ARIMA`, `SARIMA`, `Prophet`, `Ridge`, `LightGBM`, `XGBoost`, `CatBoost`, `Chronos`, `TimesFM`, `TiRex`, `TimeGPT`.
+- `--append`: Merge new results into existing `results/national/all_models_forecasts.csv` without overwriting results for other models.
+- `--tune`: Enable Optuna hyperparameter tuning for ML models.
+- `--n-jobs <N>`: Control parallel execution (default: -1).
+- `--min-train <N>`: Minimum training weeks before the first forecast origin (default: 156).
+- `--step <N>`: Step size (weeks) between rolling origins (default: 4 for national, 8 for regional).
+- `--horizons <h1,h2>`: Comma-separated horizons (default: 1,2,4,8).
+- `--model-size <size>`: Choose FM size (e.g., Chronos). Options: `tiny`, `small`, `base`, `large`, `bolt-tiny`, `bolt-small`, `bolt-base`.
+- `--dry-run`: Quick execution with minimal origins/horizons.
 
 ### Usage Examples
 
-**Full National Benchmark (Background):**
+**Full National Benchmark:**
 ```bash
-PYTHONPATH=. nohup python3 benchmark_ili_national.py --n-jobs -1 > benchmark.log 2>&1 &
+python3 benchmark_ili_national.py --n-jobs -1 --min-train 156 --step 4
 ```
 
-**High-Performance Cloud Execution (Google Colab T4):**
+**Full Regional Benchmark (Speed-Optimized):**
 ```bash
-PYTHONPATH=. python3 benchmark_ili_national.py --model Chronos --num-samples 1000 --batch-size 4
+python3 benchmark_ili_regional.py --step 12 --n-jobs -1
 ```
 
-**Local Mac Execution (Optimized for Apple Silicon):**
+**Incremental Model Update:**
 ```bash
-PYTHONPATH=. python3 benchmark_ili_national.py --model-size small --num-samples 200 --batch-size 1
+python3 benchmark_ili_national.py --model CatBoost --tune --append
 ```
 
 *Note: On Apple Silicon Macs, models automatically use the **MPS (Metal)** backend. On NVIDIA GPUs, they use **CUDA** with float16 optimization.*
 
 ## Performance & Resource Management
 
-- **Vectorized Backtesting**: Foundation models (Chronos, TimesFM) use a custom `predict_batch` implementation that processes multiple origins in parallel on the GPU/MPS, drastically reducing execution time.
+- **Vectorized Backtesting**: Foundation models (Chronos, TimesFM) use a custom `predict_batch` implementation that processes multiple origins in parallel on the GPU/MPS.
 - **Memory Chunking**: To prevent Out-Of-Memory (OOM) errors, batch processing is performed in chunks with explicit cache clearing (`torch.cuda.empty_cache()` or `torch.mps.empty_cache()`).
-- **Sequential Execution Guard**: To prevent OOM errors on machines with limited RAM (e.g., 16GB), Foundation Models (Chronos, TimesFM, TiRex) are automatically restricted to sequential execution (`n_jobs=1`) across CPU cores, as they leverage internal GPU parallelism instead.
-- **SARIMA Optimization**: Seasonal Auto-ARIMA is optimized for speed and stability by setting `max_P=1`, `max_Q=1`, and `max_D=1`. This prevents the model from exploring excessively complex seasonal structures that often lead to convergence failures or extreme slowdowns on epidemic data.
-- **Explicit Garbage Collection**: The benchmarking suite performs explicit garbage collection (`gc.collect()`) and clears the Torch cache between model runs to ensure a clean memory state for the next model.
+- **Sequential Execution Guard**: To prevent OOM errors on machines with limited RAM (e.g., 16GB), Foundation Models are restricted to sequential execution (`n_jobs=1`) across CPU cores.
+- **SARIMA Optimization**: Seasonal Auto-ARIMA is optimized for speed and stability by setting `max_P=1`, `max_Q=1`, and `max_D=1`.
+- **Explicit Garbage Collection**: The benchmarking suite performs explicit garbage collection (`gc.collect()`) between model runs.
 
 ## Goals
 
@@ -95,17 +111,20 @@ PYTHONPATH=. python3 benchmark_ili_national.py --model-size small --num-samples 
 
 ## Technical Decisions & Optimizations
 
+### Data Engineering Layer
+To meet the professor's requirements for a robust and reproducible pipeline, we implemented:
+- **Recursive Regional Discovery**: The ingestion engine automatically identifies all 22 geographic entities in the source repository, ensuring the benchmark is not limited to hardcoded subsets.
+- **Epidemic Time-Indexing**: To avoid artificial seasonality artifacts, the pipeline defaults to concatenating observed weeks. This is critical for Foundation Models, which can be sensitive to large zero-filled gaps during summer off-seasons.
+- **Source Transparency**: The `source_files_index.csv` provides a full audit trail of whether a `latest` snapshot or a weekly fallback was used for each data point.
+
 ### Backtest Engine Optimization
-To handle the large number of forecast origins (weekly rolling origins over multiple seasons) across multiple regions, we implemented a highly optimized backtest engine:
-- **Batch Processing**: For statistical models (ARIMA, ETS, Naive), we leverage `StatsForecast`'s ability to handle multiple series in parallel. Instead of a manual loop that re-initializes models for each origin, we restructure the backtest as a multi-series forecasting task where each origin's history is treated as a unique series. This reduces execution time from hours to minutes.
+To handle the large number of forecast origins across multiple regions, we implemented a highly optimized backtest engine:
+- **Batch Processing**: For statistical models (ARIMA, ETS, Naive), we leverage `StatsForecast`'s ability to handle multiple series in parallel.
 - **Parallel Execution**: For models not compatible with batching (e.g., Prophet), the engine uses `joblib` for parallel processing across available CPU cores.
-- **Future Leakage Prevention**: Strict slicing of history at each origin ensures no future information is used during model fitting or prediction, maintaining the integrity of the rolling-origin evaluation.
+- **Future Leakage Prevention**: Strict slicing of history at each origin ensures no future information is used during model fitting or prediction.
 
 ### Model Configurations
 - **AutoARIMA/SARIMA**: Optimized for speed by enabling `stepwise` search and `approximation`.
 - **ML Baselines (LightGBM/XGBoost)**: Implemented using `MLForecast` with recursive lags and **Conformal Prediction** (5 windows) to generate probabilistic outputs.
-- **Foundation Models**: Includes **Chronos**, **TimesFM (2.5)**, and **TiRex (xLSTM)**. (TimeGPT is excluded due to closed-beta/sales API requirements).
-- **Probabilistic Forecasting**: All models produce a standardized **23-quantile output** (from 0.01 to 0.99), aligned with the CDC/Influcast standard for epidemic forecasting. This allows for rigorous evaluation using CRPS, WIS, and Pinball Loss.
-
-### Scalability
-The pipeline is designed to scale from the national aggregate to 21 regional series. The optimization of the baseline models is a critical component in meeting the project's technical deadlines.
+- **Foundation Models**: Includes **Chronos**, **TimesFM (2.5)**, and **TiRex (xLSTM)**.
+- **Probabilistic Forecasting**: All models produce a standardized **23-quantile output** (from 0.01 to 0.99), aligned with the CDC/Influcast standard for epidemic forecasting.
