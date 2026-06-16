@@ -10,6 +10,11 @@ import pandas as pd
 import numpy as np
 import gc
 import warnings
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from src.models import (
     NaiveForecaster, 
     SeasonalNaiveForecaster, 
@@ -82,8 +87,8 @@ def main():
         'XGBoost': (XGBoostForecaster, {}),
         'Chronos': (ChronosForecaster, {'model_name': args.model_size, 'num_samples': args.num_samples, 'batch_size': args.batch_size}),
         'TimesFM': (TimesFMForecaster, {'batch_size': args.batch_size}),
-        'TiRex': (TiRexForecaster, {'batch_size': args.batch_size})
-        # 'TimeGPT': (TimeGPTForecaster, {}) # Skipped: Requires enterprise API key/sales call
+        'TiRex': (TiRexForecaster, {'batch_size': args.batch_size}),
+        'TimeGPT': (TimeGPTForecaster, {})
     }
     
     # Filter if specific model requested
