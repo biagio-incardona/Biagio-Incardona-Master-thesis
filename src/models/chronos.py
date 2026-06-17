@@ -20,14 +20,13 @@ class ChronosForecaster(BaseForecaster):
     
     SIZE_MAP = {
         "tiny": "amazon/chronos-t5-tiny",
+        "mini": "amazon/chronos-t5-mini",
         "small": "amazon/chronos-t5-small",
         "base": "amazon/chronos-t5-base",
         "large": "amazon/chronos-t5-large",
-        "v2-tiny": "amazon/chronos-v2-t5-tiny",
-        "v2-small": "amazon/chronos-v2-t5-small",
-        "v2-base": "amazon/chronos-v2-t5-base",
-        "v2-large": "amazon/chronos-v2-t5-large",
+        "v2": "amazon/chronos-2",
         "bolt-tiny": "amazon/chronos-bolt-tiny",
+        "bolt-mini": "amazon/chronos-bolt-mini",
         "bolt-small": "amazon/chronos-bolt-small",
         "bolt-base": "amazon/chronos-bolt-base",
     }
