@@ -59,13 +59,16 @@ class MLForecastWrapper(BaseForecaster):
             
             # Update model with suggested params
             model_class = type(self.model_obj)
-            # Create a new instance of the model with tuned params
-            base_params = {
-                'random_state': 42,
-                'n_jobs': 1
-            }
+            
+            # Determine base params based on model type
+            base_params = {'random_state': 42}
             if isinstance(self.model_obj, lgb.LGBMRegressor):
-                base_params['verbosity'] = -1
+                base_params.update({'n_jobs': 1, 'verbosity': -1})
+            elif isinstance(self.model_obj, xgb.XGBRegressor):
+                base_params.update({'n_jobs': 1})
+            elif isinstance(self.model_obj, CatBoostRegressor):
+                base_params.update({'thread_count': 1, 'silent': True})
+            # Ridge just needs random_state
             
             current_model = model_class(**{**base_params, **params})
             
@@ -89,12 +92,13 @@ class MLForecastWrapper(BaseForecaster):
         
         # Update self.model_obj with best params
         model_class = type(self.model_obj)
-        base_params = {
-            'random_state': 42,
-            'n_jobs': 1
-        }
+        base_params = {'random_state': 42}
         if isinstance(self.model_obj, lgb.LGBMRegressor):
-            base_params['verbosity'] = -1
+            base_params.update({'n_jobs': 1, 'verbosity': -1})
+        elif isinstance(self.model_obj, xgb.XGBRegressor):
+            base_params.update({'n_jobs': 1})
+        elif isinstance(self.model_obj, CatBoostRegressor):
+            base_params.update({'thread_count': 1, 'silent': True})
             
         self.model_obj = model_class(**{**base_params, **study.best_params})
 
