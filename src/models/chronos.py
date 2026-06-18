@@ -4,7 +4,12 @@ import pandas as pd
 import numpy as np
 import torch
 from typing import List, Optional, Any
-from chronos import ChronosPipeline, ChronosBoltPipeline
+try:
+    from chronos import ChronosPipeline, ChronosBoltPipeline, Chronos2Pipeline
+    HAS_CHRONOS2 = True
+except ImportError:
+    from chronos import ChronosPipeline, ChronosBoltPipeline
+    HAS_CHRONOS2 = False
 
 from src.models.base import BaseForecaster
 from src.utils.quantiles import samples_to_quantiles
@@ -73,6 +78,19 @@ class ChronosForecaster(BaseForecaster):
                 dtype=dtype,
             )
             self.is_bolt = True
+        elif "chronos-2" in self.model_name.lower():
+            if not HAS_CHRONOS2:
+                raise ImportError(
+                    "To use Chronos-2 models (like 'amazon/chronos-2'), you must install "
+                    "chronos-forecasting version 2.0.0 or higher. Please upgrade the package "
+                    "with: pip install --upgrade chronos-forecasting"
+                )
+            self.pipeline = Chronos2Pipeline.from_pretrained(
+                self.model_name,
+                device_map=self.device,
+                dtype=dtype,
+            )
+            self.is_bolt = False
         else:
             self.pipeline = ChronosPipeline.from_pretrained(
                 self.model_name,
