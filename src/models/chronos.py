@@ -78,6 +78,7 @@ class ChronosForecaster(BaseForecaster):
                 dtype=dtype,
             )
             self.is_bolt = True
+            self.is_chronos2 = False
         elif "chronos-2" in self.model_name.lower():
             if not HAS_CHRONOS2:
                 raise ImportError(
@@ -91,6 +92,7 @@ class ChronosForecaster(BaseForecaster):
                 dtype=dtype,
             )
             self.is_bolt = False
+            self.is_chronos2 = True
         else:
             self.pipeline = ChronosPipeline.from_pretrained(
                 self.model_name,
@@ -98,6 +100,7 @@ class ChronosForecaster(BaseForecaster):
                 dtype=dtype,
             )
             self.is_bolt = False
+            self.is_chronos2 = False
 
 
     def predict(
@@ -166,13 +169,22 @@ class ChronosForecaster(BaseForecaster):
                         chunk,
                         prediction_length=horizon,
                     )
+                    all_forecast_samples.append(chunk_samples.numpy())
+                elif self.is_chronos2:
+                    chunk_samples_list = self.pipeline.predict(
+                        chunk,
+                        prediction_length=horizon,
+                    )
+                    # Convert list of [1, 9, horizon] to a stacked tensor of shape [batch_size, 9, horizon]
+                    chunk_samples = torch.stack([t.cpu().squeeze(0) for t in chunk_samples_list], dim=0)
+                    all_forecast_samples.append(chunk_samples.numpy())
                 else:
                     chunk_samples = self.pipeline.predict(
                         chunk,
                         prediction_length=horizon,
                         num_samples=num_samples,
                     )
-                all_forecast_samples.append(chunk_samples.numpy())
+                    all_forecast_samples.append(chunk_samples.numpy())
             
             # Explicitly clear cache
             if self.device == "mps":
@@ -196,7 +208,7 @@ class ChronosForecaster(BaseForecaster):
             ).tolist()
             
             # Convert samples to the standardized quantile format
-            if self.is_bolt:
+            if self.is_bolt or self.is_chronos2:
                 from scipy.interpolate import interp1d
                 x_trained = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
                 f = interp1d(x_trained, samples, axis=0, kind='linear', fill_value='extrapolate')
