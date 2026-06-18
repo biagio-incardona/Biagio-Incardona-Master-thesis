@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import torch
 from typing import List, Optional, Any
-from chronos import ChronosPipeline
+from chronos import ChronosPipeline, ChronosBoltPipeline
 
 from src.models.base import BaseForecaster
 from src.utils.quantiles import samples_to_quantiles
@@ -66,11 +66,20 @@ class ChronosForecaster(BaseForecaster):
             dtype = torch.float16
         
         print(f"Loading Chronos model: {self.model_name} on {self.device}...")
-        self.pipeline = ChronosPipeline.from_pretrained(
-            self.model_name,
-            device_map=self.device,
-            dtype=dtype,
-        )
+        if "bolt" in self.model_name.lower():
+            self.pipeline = ChronosBoltPipeline.from_pretrained(
+                self.model_name,
+                device_map=self.device,
+                dtype=dtype,
+            )
+            self.is_bolt = True
+        else:
+            self.pipeline = ChronosPipeline.from_pretrained(
+                self.model_name,
+                device_map=self.device,
+                dtype=dtype,
+            )
+            self.is_bolt = False
 
 
     def predict(
@@ -134,11 +143,17 @@ class ChronosForecaster(BaseForecaster):
             chunk = contexts[i : i + batch_size]
             print(f"Chronos batch inference for {len(chunk)} series (origin {i}-{i+len(chunk)})...")
             with torch.no_grad():
-                chunk_samples = self.pipeline.predict(
-                    chunk,
-                    prediction_length=horizon,
-                    num_samples=num_samples,
-                )
+                if self.is_bolt:
+                    chunk_samples = self.pipeline.predict(
+                        chunk,
+                        prediction_length=horizon,
+                    )
+                else:
+                    chunk_samples = self.pipeline.predict(
+                        chunk,
+                        prediction_length=horizon,
+                        num_samples=num_samples,
+                    )
                 all_forecast_samples.append(chunk_samples.numpy())
             
             # Explicitly clear cache
@@ -148,11 +163,11 @@ class ChronosForecaster(BaseForecaster):
                 torch.cuda.empty_cache()
             
         # Concatenate all chunks
-        forecast_samples = np.concatenate(all_forecast_samples, axis=0) # (num_series, num_samples, horizon)
+        forecast_samples = np.concatenate(all_forecast_samples, axis=0) # (num_series, num_samples/9, horizon)
         
         results = []
         for i, history in enumerate(histories):
-            samples = forecast_samples[i] # (num_samples, horizon)
+            samples = forecast_samples[i] # (num_samples/9, horizon)
             
             # Calculate target dates
             last_date = pd.to_datetime(history['ds'].iloc[-1])
@@ -163,10 +178,28 @@ class ChronosForecaster(BaseForecaster):
             ).tolist()
             
             # Convert samples to the standardized quantile format
-            results.append(samples_to_quantiles(
-                samples, 
-                quantiles, 
-                target_dates=target_dates
-            ))
+            if self.is_bolt:
+                from scipy.interpolate import interp1d
+                x_trained = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+                f = interp1d(x_trained, samples, axis=0, kind='linear', fill_value='extrapolate')
+                interpolated_quantiles = f(quantiles) # (len(quantiles), horizon)
+                interpolated_quantiles = np.clip(interpolated_quantiles, a_min=0.0, a_max=None)
+                
+                results_df = []
+                for j, q in enumerate(quantiles):
+                    q_values = interpolated_quantiles[j] # (horizon,)
+                    df_q = pd.DataFrame({
+                        'ds': target_dates,
+                        'quantile': q,
+                        'value': q_values
+                    })
+                    results_df.append(df_q)
+                results.append(pd.concat(results_df, ignore_index=True))
+            else:
+                results.append(samples_to_quantiles(
+                    samples, 
+                    quantiles, 
+                    target_dates=target_dates
+                ))
             
         return results
