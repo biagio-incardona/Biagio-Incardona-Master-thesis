@@ -210,7 +210,7 @@ class ChronosForecaster(BaseForecaster):
             # Convert samples to the standardized quantile format
             if self.is_bolt or self.is_chronos2:
                 from scipy.interpolate import interp1d
-                x_trained = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+                x_trained = np.array(self.pipeline.quantiles)
                 f = interp1d(x_trained, samples, axis=0, kind='linear', fill_value='extrapolate')
                 interpolated_quantiles = f(quantiles) # (len(quantiles), horizon)
                 interpolated_quantiles = np.clip(interpolated_quantiles, a_min=0.0, a_max=None)
