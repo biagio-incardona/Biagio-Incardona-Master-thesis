@@ -1,0 +1,56 @@
+{
+    "period_covered": "2012-01-08 to 2018-08-19",
+    "num_regions": 2,
+    "horizons": [
+        1,
+        2,
+        4,
+        8
+    ],
+    "completed_models": [
+        "Naive",
+        "SeasonalNaive",
+        "Drift",
+        "ETS",
+        "ARIMA",
+        "SARIMA",
+        "Prophet",
+        "LightGBM",
+        "XGBoost",
+        "CatBoost",
+        "Ridge",
+        "Chronos"
+    ],
+    "failed_models": [
+        {
+            "model": "MovingAverage",
+            "region": "abruzzo",
+            "error": "You must pass `prediction_intervals` to compute them."
+        },
+        {
+            "model": "TimesFM",
+            "region": "abruzzo",
+            "error": "TimesFM is not installed. Please install it with: pip install 'timesfm[torch] @ git+https://github.com/google-research/timesfm.git'"
+        },
+        {
+            "model": "TiRex",
+            "region": "abruzzo",
+            "error": "TiRex is not installed. Please install it with: pip install git+https://github.com/NX-AI/tirex.git"
+        },
+        {
+            "model": "MovingAverage",
+            "region": "basilicata",
+            "error": "You must pass `prediction_intervals` to compute them."
+        },
+        {
+            "model": "TimesFM",
+            "region": "basilicata",
+            "error": "TimesFM is not installed. Please install it with: pip install 'timesfm[torch] @ git+https://github.com/google-research/timesfm.git'"
+        },
+        {
+            "model": "TiRex",
+            "region": "basilicata",
+            "error": "TiRex is not installed. Please install it with: pip install git+https://github.com/NX-AI/tirex.git"
+        }
+    ]
+}

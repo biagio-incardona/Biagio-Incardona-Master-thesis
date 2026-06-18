@@ -68,11 +68,19 @@ def run_backtest(
         )
         
         # Batch forecast all origins
-        cv_res = sf.forecast(
-            df=sf_df,
-            h=max_horizon,
-            level=levels
-        )
+        try:
+            cv_res = sf.forecast(
+                df=sf_df,
+                h=max_horizon,
+                level=levels
+            )
+        except Exception as e:
+            print(f"Warning: StatsForecast failed to generate intervals: {e}. Falling back to point forecast.")
+            cv_res = sf.forecast(
+                df=sf_df,
+                h=max_horizon
+            )
+            levels = [] # Disable quantile loop below
         
         model_name = repr(model.model_obj).split('(')[0]
         res_dfs = []

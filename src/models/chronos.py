@@ -20,9 +20,15 @@ class ChronosForecaster(BaseForecaster):
     
     SIZE_MAP = {
         "tiny": "amazon/chronos-t5-tiny",
+        "mini": "amazon/chronos-t5-mini",
         "small": "amazon/chronos-t5-small",
         "base": "amazon/chronos-t5-base",
         "large": "amazon/chronos-t5-large",
+        "v2": "amazon/chronos-2",
+        "bolt-tiny": "amazon/chronos-bolt-tiny",
+        "bolt-mini": "amazon/chronos-bolt-mini",
+        "bolt-small": "amazon/chronos-bolt-small",
+        "bolt-base": "amazon/chronos-bolt-base",
     }
     
     def __init__(self, model_name: str = "small", device: Optional[str] = None, num_samples: int = 1000, batch_size: int = 8):
