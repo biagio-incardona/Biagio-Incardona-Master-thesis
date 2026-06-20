@@ -31,8 +31,9 @@ from src.models import (
 )
 from src.evaluation.backtest import run_backtest
 from src.evaluation.metrics import evaluate_forecasts
+from src.evaluation.peak_metrics import calculate_seasonal_peak_metrics
 from src.utils.quantiles import INFLUCAST_QUANTILES
-from src.utils.visualizations import plot_regional_performance
+from src.utils.visualizations import plot_regional_performance, plot_best_model_map
 
 def main():
     parser = argparse.ArgumentParser(description='Regional ILI Model Benchmarking')
@@ -156,6 +157,17 @@ def main():
             reg_metrics['region'] = region
             reg_metrics.to_csv(os.path.join(output_dir, f"{region}_metrics.csv"), index=False)
 
+            # Calculate and save regional peak metrics
+            print(f"Calculating seasonal peak metrics for {region}...")
+            peak_truth = region_df.rename(columns={'ds': 'target_date', 'y': 'true_value'})
+            peak_results = []
+            for h in [None, 1, 2, 4, 8]:
+                h_peak = calculate_seasonal_peak_metrics(reg_full_fcst, peak_truth, horizon=h)
+                peak_results.append(h_peak)
+            reg_peak_metrics_df = pd.concat(peak_results, ignore_index=True)
+            reg_peak_metrics_df['region'] = region
+            reg_peak_metrics_df.to_csv(os.path.join(output_dir, f"{region}_peak_metrics.csv"), index=False)
+
     # Save run_info.json
     import json
     run_info = {
@@ -183,6 +195,7 @@ def main():
     # Generate Aggregate Regional Plots
     print("\nGenerating regional aggregate visualizations...")
     plot_regional_performance(output_dir, os.path.join(output_dir, "plots"))
+    plot_best_model_map(output_dir, os.path.join(output_dir, "plots"))
     print(f"Regional plots saved to {os.path.join(output_dir, 'plots')}")
 
 if __name__ == "__main__":

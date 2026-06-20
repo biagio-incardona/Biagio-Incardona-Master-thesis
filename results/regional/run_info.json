@@ -11,6 +11,7 @@
         "Naive",
         "SeasonalNaive",
         "Drift",
+        "MovingAverage",
         "ETS",
         "ARIMA",
         "SARIMA",
@@ -23,11 +24,6 @@
     ],
     "failed_models": [
         {
-            "model": "MovingAverage",
-            "region": "abruzzo",
-            "error": "You must pass `prediction_intervals` to compute them."
-        },
-        {
             "model": "TimesFM",
             "region": "abruzzo",
             "error": "TimesFM is not installed. Please install it with: pip install 'timesfm[torch] @ git+https://github.com/google-research/timesfm.git'"
@@ -36,11 +32,6 @@
             "model": "TiRex",
             "region": "abruzzo",
             "error": "TiRex is not installed. Please install it with: pip install git+https://github.com/NX-AI/tirex.git"
-        },
-        {
-            "model": "MovingAverage",
-            "region": "basilicata",
-            "error": "You must pass `prediction_intervals` to compute them."
         },
         {
             "model": "TimesFM",

@@ -193,10 +193,10 @@ class MovingAverageForecaster(StatsForecastWrapper):
             window_size: Size of the moving window.
         """
         # We use ConformalIntervals to provide prediction intervals for simple WindowAverage.
-        # We set h=26 (half a year) as a safe calibration buffer for any reasonable ILI horizon.
+        # We set h=8 as a safe calibration buffer matching our maximum evaluation horizon.
         super().__init__(WindowAverage(
             window_size=window_size, 
-            prediction_intervals=ConformalIntervals(n_windows=5, h=26)
+            prediction_intervals=ConformalIntervals(n_windows=5, h=8)
         ))
 
 

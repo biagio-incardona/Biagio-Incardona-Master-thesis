@@ -129,7 +129,7 @@ def main():
     
     existing_forecasts = None
     if args.append:
-        full_forecast_file = os.path.join(output_dir, "all_models_forecasts.csv")
+        full_forecast_file = os.path.join(output_dir, "backtest_predictions.csv")
         if os.path.exists(full_forecast_file):
             print(f"Loading existing forecasts from {full_forecast_file} for appending...")
             existing_forecasts = pd.read_csv(full_forecast_file)
@@ -233,7 +233,7 @@ def main():
 
     full_forecasts['target_date'] = pd.to_datetime(full_forecasts['target_date'])
     
-    full_forecast_file = os.path.join(output_dir, "all_models_forecasts.csv")
+    full_forecast_file = os.path.join(output_dir, "backtest_predictions.csv")
     full_forecasts.to_csv(full_forecast_file, index=False)
     
     print("Calculating metrics...")
@@ -301,7 +301,7 @@ def main():
     print(f"Visualizations saved to {vis_dir}")
 
     if not metrics_df.empty:
-        metrics_file = os.path.join(output_dir, "all_models_metrics.csv")
+        metrics_file = os.path.join(output_dir, "backtest_summary.csv")
         metrics_df.to_csv(metrics_file, index=False)
         
         if not peak_metrics_df.empty:
