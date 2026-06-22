@@ -92,7 +92,11 @@ def main():
     }
 
     if args.model:
-        models_to_run = {args.model: all_models[args.model]}
+        requested_models = [m.strip() for m in args.model.split(',')]
+        models_to_run = {m: all_models[m] for m in requested_models if m in all_models}
+        if not models_to_run:
+            print(f"None of the requested models {args.model} were found in the registry.")
+            return
     else:
         models_to_run = all_models
 

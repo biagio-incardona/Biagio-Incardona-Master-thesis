@@ -114,10 +114,10 @@ def main():
     
     # Filter if specific model requested
     if args.model:
-        if args.model in all_models:
-            models_to_run = {args.model: all_models[args.model]}
-        else:
-            print(f"Model {args.model} not found in registry.")
+        requested_models = [m.strip() for m in args.model.split(',')]
+        models_to_run = {m: all_models[m] for m in requested_models if m in all_models}
+        if not models_to_run:
+            print(f"None of the requested models {args.model} were found in the registry.")
             return
     elif args.dry_run:
         models_to_run = {'Naive': all_models['Naive']}
