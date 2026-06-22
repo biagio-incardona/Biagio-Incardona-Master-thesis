@@ -44,6 +44,7 @@ def main():
     parser.add_argument('--min-train', type=int, default=156, help='Minimum training weeks')
     parser.add_argument('--step', type=int, default=8, help='Step size between origins (default 8 for regional speed)')
     parser.add_argument('--horizons', type=str, default='1,2,4,8', help='Comma-separated horizons')
+    parser.add_argument('--append', action='store_true', help='Append to existing regional forecasts')
     args = parser.parse_args()
 
     # Load data
@@ -125,6 +126,22 @@ def main():
 
         region_forecasts = []
         
+        # Load existing forecasts if appending
+        reg_file = os.path.join(output_dir, f"{region}_forecasts.csv")
+        existing_fcsts = None
+        if args.append and os.path.exists(reg_file):
+            print(f"Loading existing forecasts from {reg_file} for appending...")
+            existing_fcsts = pd.read_csv(reg_file)
+            existing_fcsts['origin'] = pd.to_datetime(existing_fcsts['origin'])
+            existing_fcsts['target_date'] = pd.to_datetime(existing_fcsts['target_date'])
+            # Filter out models we are about to re-run
+            existing_fcsts = existing_fcsts[~existing_fcsts['model'].isin(models_to_run.keys())]
+            
+            # Add existing models to completed list
+            for m in existing_fcsts['model'].unique():
+                if m not in completed_models:
+                    completed_models.append(m)
+        
         for name, (model_cls, kwargs) in models_to_run.items():
             print(f"--- Running {name} for {region} ---")
             current_n_jobs = 1 if name in sequential_models else args.n_jobs
@@ -149,9 +166,15 @@ def main():
                 print(f"Error in {name} for {region}: {e}")
                 failed_models.append({'model': name, 'region': region, 'error': str(e)})
 
+        # Combine new forecasts with existing ones if applicable
+        combined_forecasts = []
+        if existing_fcsts is not None:
+            combined_forecasts.append(existing_fcsts)
         if region_forecasts:
-            reg_full_fcst = pd.concat(region_forecasts, ignore_index=True)
-            reg_file = os.path.join(output_dir, f"{region}_forecasts.csv")
+            combined_forecasts.append(pd.concat(region_forecasts, ignore_index=True))
+            
+        if combined_forecasts:
+            reg_full_fcst = pd.concat(combined_forecasts, ignore_index=True)
             reg_full_fcst.to_csv(reg_file, index=False)
             
             # Evaluate locally for this region
