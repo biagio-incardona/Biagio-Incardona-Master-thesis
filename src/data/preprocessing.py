@@ -76,6 +76,9 @@ def preprocess_ili_data(time_index='epidemic', fill_zeros=False):
     full_df = pd.concat(all_data, ignore_index=True)
     full_df['calendar_ds'] = pd.to_datetime(full_df['calendar_ds'])
     
+    # Drop rows with NaN in y (missing raw surveillance data)
+    full_df = full_df.dropna(subset=['y'])
+    
     # Sort and remove duplicates (prefer latest season if overlap exists)
     full_df = full_df.sort_values(['region', 'calendar_ds', 'season'], ascending=[True, True, False])
     full_df = full_df.drop_duplicates(subset=['region', 'calendar_ds'])
