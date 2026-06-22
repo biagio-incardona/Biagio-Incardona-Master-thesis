@@ -55,7 +55,7 @@ def plot_regional_performance(regional_metrics_dir: str, output_dir: str):
     
     all_reg_metrics = []
     for f in os.listdir(regional_metrics_dir):
-        if f.endswith("_metrics.csv"):
+        if f.endswith("_metrics.csv") and not f.endswith("_peak_metrics.csv") and not f.startswith("all_regions"):
             df = pd.read_csv(os.path.join(regional_metrics_dir, f))
             all_reg_metrics.append(df)
             
@@ -82,7 +82,7 @@ def plot_best_model_map(regional_metrics_dir: str, output_dir: str):
     
     all_reg_metrics = []
     for f in os.listdir(regional_metrics_dir):
-        if f.endswith("_metrics.csv") and not f.startswith("best_model_per_region"):
+        if f.endswith("_metrics.csv") and not f.endswith("_peak_metrics.csv") and not f.startswith("best_model_per_region") and not f.startswith("all_regions"):
             df = pd.read_csv(os.path.join(regional_metrics_dir, f))
             all_reg_metrics.append(df)
             

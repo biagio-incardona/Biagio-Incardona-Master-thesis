@@ -8,40 +8,7 @@
         8
     ],
     "completed_models": [
-        "Naive",
-        "SeasonalNaive",
-        "Drift",
-        "MovingAverage",
-        "ETS",
-        "ARIMA",
-        "SARIMA",
-        "Prophet",
-        "LightGBM",
-        "XGBoost",
-        "CatBoost",
-        "Ridge",
-        "Chronos"
+        "MovingAverage"
     ],
-    "failed_models": [
-        {
-            "model": "TimesFM",
-            "region": "abruzzo",
-            "error": "TimesFM is not installed. Please install it with: pip install 'timesfm[torch] @ git+https://github.com/google-research/timesfm.git'"
-        },
-        {
-            "model": "TiRex",
-            "region": "abruzzo",
-            "error": "TiRex is not installed. Please install it with: pip install git+https://github.com/NX-AI/tirex.git"
-        },
-        {
-            "model": "TimesFM",
-            "region": "basilicata",
-            "error": "TimesFM is not installed. Please install it with: pip install 'timesfm[torch] @ git+https://github.com/google-research/timesfm.git'"
-        },
-        {
-            "model": "TiRex",
-            "region": "basilicata",
-            "error": "TiRex is not installed. Please install it with: pip install git+https://github.com/NX-AI/tirex.git"
-        }
-    ]
+    "failed_models": []
 }

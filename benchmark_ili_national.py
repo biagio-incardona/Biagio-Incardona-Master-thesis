@@ -43,7 +43,7 @@ def main():
     parser = argparse.ArgumentParser(description='National ILI Model Benchmarking')
     parser.add_argument('--dry-run', action='store_true', help='Run a quick check with one model and few origins')
     parser.add_argument('--model', type=str, default=None, help='Run only a specific model')
-    parser.add_argument('--append', action='store_true', help='Append to existing results/national/all_models_forecasts.csv')
+    parser.add_argument('--append', action='store_true', help='Append to existing results/national/backtest_predictions.csv')
     parser.add_argument('--n-jobs', type=int, default=-1, help='Number of jobs for parallel execution (default: -1)')
     parser.add_argument('--min-train', type=int, default=156, help='Minimum training weeks (default: 156 = 3 years)')
     parser.add_argument('--step', type=int, default=4, help='Step size between origins (default: 4)')

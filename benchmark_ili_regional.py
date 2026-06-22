@@ -131,7 +131,10 @@ def main():
             
             try:
                 model = model_cls(**kwargs)
-                forecasts = run_backtest(region_df, model, origins, horizons, quantiles, n_jobs=current_n_jobs)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning, message=".*convergence.*")
+                    warnings.filterwarnings("ignore", message=".*ConvergenceWarning.*")
+                    forecasts = run_backtest(region_df, model, origins, horizons, quantiles, n_jobs=current_n_jobs)
                 forecasts['model'] = name
                 forecasts['region'] = region
                 region_forecasts.append(forecasts)
@@ -167,6 +170,27 @@ def main():
             reg_peak_metrics_df = pd.concat(peak_results, ignore_index=True)
             reg_peak_metrics_df['region'] = region
             reg_peak_metrics_df.to_csv(os.path.join(output_dir, f"{region}_peak_metrics.csv"), index=False)
+
+    # Consolidate regional metrics and peak metrics
+    all_metrics = []
+    all_peak_metrics = []
+    for r in regions:
+        metrics_file = os.path.join(output_dir, f"{r}_metrics.csv")
+        peak_file = os.path.join(output_dir, f"{r}_peak_metrics.csv")
+        if os.path.exists(metrics_file):
+            all_metrics.append(pd.read_csv(metrics_file))
+        if os.path.exists(peak_file):
+            all_peak_metrics.append(pd.read_csv(peak_file))
+            
+    if all_metrics:
+        consolidated_metrics_df = pd.concat(all_metrics, ignore_index=True)
+        consolidated_metrics_df.to_csv(os.path.join(output_dir, "all_regions_metrics.csv"), index=False)
+        print(f"Consolidated regional metrics saved to {os.path.join(output_dir, 'all_regions_metrics.csv')}")
+        
+    if all_peak_metrics:
+        consolidated_peak_df = pd.concat(all_peak_metrics, ignore_index=True)
+        consolidated_peak_df.to_csv(os.path.join(output_dir, "all_regions_peak_metrics.csv"), index=False)
+        print(f"Consolidated regional peak metrics saved to {os.path.join(output_dir, 'all_regions_peak_metrics.csv')}")
 
     # Save run_info.json
     import json

@@ -19,7 +19,7 @@ This project evaluates zero-shot foundation models (Chronos, TimesFM, etc.) agai
 - `benchmark_ili_regional.py`: Entry point for regional benchmarks across all 22 geographic areas.
 - `requirements.txt`: Python dependencies.
 - `results/`: (Generated) Output directory for forecasts and evaluation summaries.
-    - `national/`: Standardized outputs for national runs (`RUN_REPORT.md`, `all_models_metrics.csv`, etc.).
+    - `national/`: Standardized outputs for national runs (`RUN_REPORT.md`, `backtest_summary.csv`, etc.).
     - `regional/`: Standardized outputs for regional runs.
 
 ## Setup
@@ -66,7 +66,7 @@ python3 src/data/preprocessing.py --time-index epidemic
 The primary benchmarking scripts are `benchmark_ili_national.py` and `benchmark_ili_regional.py`. They support several flags for customization:
 
 - `--model <name>`: Run only a specific model (e.g., `Chronos`). Supported: `Naive`, `SeasonalNaive`, `Drift`, `MovingAverage`, `ETS`, `ARIMA`, `SARIMA`, `Prophet`, `Ridge`, `LightGBM`, `XGBoost`, `CatBoost`, `Chronos`, `TimesFM`, `TiRex`, `TimeGPT`.
-- `--append`: Merge new results into existing `results/national/all_models_forecasts.csv` without overwriting results for other models.
+- `--append`: Merge new results into existing `results/national/backtest_predictions.csv` without overwriting results for other models.
 - `--tune`: Enable Optuna hyperparameter tuning for ML models.
 - `--n-jobs <N>`: Control parallel execution (default: -1).
 - `--min-train <N>`: Minimum training weeks before the first forecast origin (default: 156).
