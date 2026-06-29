@@ -19,3 +19,5 @@ TECHNICAL_GAPS.md
 *.png
 run_info.json
 RUN_REPORT.md
+scratch/
+old_notebooks/

@@ -45,6 +45,13 @@ def main():
     parser.add_argument('--step', type=int, default=8, help='Step size between origins (default 8 for regional speed)')
     parser.add_argument('--horizons', type=str, default='1,2,4,8', help='Comma-separated horizons')
     parser.add_argument('--append', action='store_true', help='Append to existing regional forecasts')
+    parser.add_argument('--model-size', type=str, default='small', 
+                        choices=['tiny', 'mini', 'small', 'base', 'large', 
+                                 'v2', 'bolt-tiny', 'bolt-mini', 'bolt-small', 'bolt-base'],
+                        help='Size of foundation models (Chronos, etc.)')
+    parser.add_argument('--num-samples', type=int, default=1000, help='Number of samples for foundation models')
+    parser.add_argument('--batch-size', type=int, default=8, help='Batch size for foundation model inference')
+    parser.add_argument('--device', type=str, default=None, choices=['cpu', 'cuda', 'mps'], help='Override default device for deep learning models')
     args = parser.parse_args()
 
     # Load data
@@ -86,9 +93,9 @@ def main():
         'XGBoost': (XGBoostForecaster, {}),
         'CatBoost': (CatBoostForecaster, {}),
         'Ridge': (RidgeForecaster, {}),
-        'Chronos': (ChronosForecaster, {'model_name': 'small'}), # Use small for regional to save time
-        'TimesFM': (TimesFMForecaster, {}),
-        'TiRex': (TiRexForecaster, {}),
+        'Chronos': (ChronosForecaster, {'model_name': args.model_size, 'num_samples': args.num_samples, 'batch_size': args.batch_size, 'device': args.device}),
+        'TimesFM': (TimesFMForecaster, {'batch_size': args.batch_size, 'device': args.device}),
+        'TiRex': (TiRexForecaster, {'device': args.device}),
     }
 
     if args.model:
