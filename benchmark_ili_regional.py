@@ -145,16 +145,13 @@ def main():
             existing_fcsts = pd.read_csv(reg_file)
             existing_fcsts['origin'] = pd.to_datetime(existing_fcsts['origin'])
             existing_fcsts['target_date'] = pd.to_datetime(existing_fcsts['target_date'])
-            # Filter out models we are about to re-run
-            existing_fcsts = existing_fcsts[~existing_fcsts['model'].isin(models_to_run.keys())]
-            
-            # Add existing models to completed list
-            for m in existing_fcsts['model'].unique():
-                if m not in completed_models:
-                    completed_models.append(m)
         
         for name, (model_cls, kwargs) in models_to_run.items():
-            print(f"--- Running {name} for {region} ---")
+            model_display_name = name
+            if name == 'Chronos':
+                model_display_name = f"{name}-{args.model_size.capitalize()}"
+                
+            print(f"--- Running {model_display_name} for {region} ---")
             current_n_jobs = 1 if name in sequential_models else args.n_jobs
             
             try:
@@ -163,24 +160,34 @@ def main():
                     warnings.filterwarnings("ignore", category=UserWarning, message=".*convergence.*")
                     warnings.filterwarnings("ignore", message=".*ConvergenceWarning.*")
                     forecasts = run_backtest(region_df, model, origins, horizons, quantiles, n_jobs=current_n_jobs)
-                forecasts['model'] = name
+                forecasts['model'] = model_display_name
                 forecasts['region'] = region
                 region_forecasts.append(forecasts)
                 
-                if name not in completed_models:
-                    completed_models.append(name)
+                if model_display_name not in completed_models:
+                    completed_models.append(model_display_name)
                 
                 del model
                 if torch.cuda.is_available(): torch.cuda.empty_cache()
                 gc.collect()
             except Exception as e:
                 print(f"Error in {name} for {region}: {e}")
-                failed_models.append({'model': name, 'region': region, 'error': str(e)})
+                failed_models.append({'model': model_display_name, 'region': region, 'error': str(e)})
 
         # Combine new forecasts with existing ones if applicable
         combined_forecasts = []
         if existing_fcsts is not None:
+            # Filter out models we just ran
+            newly_run = [f['model'].iloc[0] for f in region_forecasts] if region_forecasts else []
+            existing_fcsts = existing_fcsts[~existing_fcsts['model'].isin(newly_run)]
+            
+            # Add existing models to completed list
+            for m in existing_fcsts['model'].unique():
+                if m not in completed_models:
+                    completed_models.append(m)
+                    
             combined_forecasts.append(existing_fcsts)
+            
         if region_forecasts:
             combined_forecasts.append(pd.concat(region_forecasts, ignore_index=True))
             
