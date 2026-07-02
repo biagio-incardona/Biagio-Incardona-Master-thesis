@@ -83,7 +83,12 @@ def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame
                 'model': model,
                 'season': f"{start[:4]}-{end[:4]}",
                 'horizon': horizon if horizon is not None else 'latest',
+                'true_peak_date': true_peak_date,
+                'pred_peak_date': pred_peak_date,
                 'peak_timing_error_weeks': timing_error,
+                'true_peak_val': true_peak_val,
+                'pred_peak_val': pred_peak_val,
+                'peak_intensity_error_abs': abs(pred_peak_val - true_peak_val),
                 'peak_intensity_error_rel': intensity_error_rel
             })
             

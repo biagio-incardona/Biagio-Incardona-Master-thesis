@@ -12,15 +12,17 @@ This project evaluates zero-shot foundation models (Chronos, TimesFM, etc.) agai
         - `source_files_index.csv`: Manifest tracking the exact source file used for every season and region.
 - `src/`: Source code.
     - `data/`: Scripts for data `ingestion.py` and `preprocessing.py`.
-    - `models/`: Implementations for `baselines.py` (statistical), `ml.py` (LightGBM/XGBoost), and Foundation Models (`chronos.py`, `timesfm.py`, `tirex.py`, `timegpt.py`).
+    - `models/`: Implementations for `baselines.py` (statistical), `ml.py` (LightGBM/XGBoost/CatBoost/Ridge), and Foundation Models (`chronos.py`, `timesfm.py`, `tirex.py`, `timegpt.py`).
     - `evaluation/`: Backtesting engine (`backtest.py`), accuracy `metrics.py`, and epidemic `peak_metrics.py`.
-    - `utils/`: Common utilities like `quantiles.py`.
+    - `utils/`: Common utilities like `quantiles.py` and `visualizations.py`.
 - `benchmark_ili_national.py`: Main entry point for national benchmarks.
-- `benchmark_ili_regional.py`: Entry point for regional benchmarks across all 22 geographic areas.
+- `benchmark_ili_regional.py`: Entry point for regional benchmarks across all 21 regions/provinces.
 - `requirements.txt`: Python dependencies.
 - `results/`: (Generated) Output directory for forecasts and evaluation summaries.
-    - `national/`: Standardized outputs for national runs (`RUN_REPORT.md`, `backtest_summary.csv`, etc.).
-    - `regional/`: Standardized outputs for regional runs.
+    - `national/`: Standardized outputs for national runs (`RUN_REPORT.md`, `run_info.json`, `backtest_summary.csv`, `backtest_metrics_by_origin.csv`, `backtest_predictions.csv`, `all_models_peak_metrics.csv`).
+        - `plots/`: Automated PNG/PDF visualisations.
+    - `regional/`: Standardized outputs for regional runs (`RUN_REPORT.md`, `run_info.json`, `all_regions_metrics.csv`, `all_regions_peak_metrics.csv`, `best_model_per_region.csv`, and individual `{region}_forecasts.csv`, `{region}_metrics.csv`, and `{region}_peak_metrics.csv` files).
+        - `plots/`: Automated PNG/PDF visualisations.
 
 ## Setup
 
@@ -44,35 +46,51 @@ Some models require additional system-level libraries:
   brew install libomp
   ```
 
-### 3. Model Downloads
+### 3. Model Downloads & API Keys
 Foundation models are downloaded automatically from the HuggingFace Hub during their first execution. 
 
-- **Chronos (Large)**: ~3GB.
+- **Chronos (small, v2, bolt-small, large, etc.)**: ~3GB for large, smaller for other variants.
 - **TimesFM (2.5)**: ~1GB.
 - **TiRex**: ~150MB.
 
+**TimeGPT** requires an API token from Nixtla. You must set the `TIMEGPT_TOKEN` environment variable before running benchmarks:
+```bash
+export TIMEGPT_TOKEN="your_nixtla_api_token_here"
+```
+
 ### 4. Data Preparation
 Before running benchmarks, ingest and preprocess the latest data from the Influcast repository:
+
+> [!NOTE]
+> **Data Scope (ILI vs ARI):** This benchmark focuses exclusively on historical **ILI** (Influenza-Like Illness) data. While the Italian surveillance system transitioned to tracking **ARI** (Acute Respiratory Infections) starting from the 2025-2026 season, this pipeline maintains a strict distinction and restricts evaluation to the long-term ILI historical series to ensure modeling consistency over the 20+ year timeframe.
+
 ```bash
-# 1. Automated ingestion of all 22 regions/provinces (2003-present)
+# 1. Automated ingestion of all 22 geographic entities (national + 21 regions) (2003-present)
 python3 src/data/ingestion.py
 
 # 2. Preprocess with Epidemic Time-Indexing (Default)
 python3 src/data/preprocessing.py --time-index epidemic
+
+# Note: For traditional time-series indexing with optional zero-filling during summer off-seasons, use:
+# python3 src/data/preprocessing.py --time-index calendar --fill-zeros
 ```
 
 ## Benchmarking CLI
 
 The primary benchmarking scripts are `benchmark_ili_national.py` and `benchmark_ili_regional.py`. They support several flags for customization:
 
-- `--model <name>`: Run only a specific model (e.g., `Chronos`). Supported: `Naive`, `SeasonalNaive`, `Drift`, `MovingAverage`, `ETS`, `ARIMA`, `SARIMA`, `Prophet`, `Ridge`, `LightGBM`, `XGBoost`, `CatBoost`, `Chronos`, `TimesFM`, `TiRex`, `TimeGPT`.
+- `--model <name>`: Run only a specific model (e.g., `Chronos`) or a comma-separated list of models (e.g., `Naive,ARIMA,CatBoost`). Supported: `Naive`, `SeasonalNaive`, `Drift`, `MovingAverage`, `ETS`, `ARIMA`, `SARIMA`, `Prophet`, `Ridge`, `LightGBM`, `XGBoost`, `CatBoost`, `Chronos`, `TimesFM`, `TiRex`, `TimeGPT`.
+- `--region <name>`: Run only a specific region (only applicable for `benchmark_ili_regional.py`).
 - `--append`: Merge new results into existing `results/national/backtest_predictions.csv` without overwriting results for other models.
 - `--tune`: Enable Optuna hyperparameter tuning for ML models.
 - `--n-jobs <N>`: Control parallel execution (default: -1).
 - `--min-train <N>`: Minimum training weeks before the first forecast origin (default: 156).
 - `--step <N>`: Step size (weeks) between rolling origins (default: 4 for national, 8 for regional).
 - `--horizons <h1,h2>`: Comma-separated horizons (default: 1,2,4,8).
-- `--model-size <size>`: Choose FM size (e.g., Chronos). Options: `tiny`, `small`, `base`, `large`, `bolt-tiny`, `bolt-small`, `bolt-base`.
+- `--model-size <size>`: Choose FM size (e.g., Chronos). Options: `tiny`, `mini`, `small`, `base`, `large`, `v2`, `bolt-tiny`, `bolt-mini`, `bolt-small`, `bolt-base`.
+- `--num-samples <N>`: Number of samples for foundation models (default: 1000).
+- `--batch-size <N>`: Batch size for foundation model inference (default: 1 for national, 8 for regional).
+- `--device <type>`: Override default device for deep learning models (`cpu`, `cuda`, `mps`).
 - `--dry-run`: Quick execution with minimal origins/horizons.
 
 ### Usage Examples
@@ -84,7 +102,7 @@ python3 benchmark_ili_national.py --n-jobs -1 --min-train 156 --step 4
 
 **Full Regional Benchmark (Speed-Optimized):**
 ```bash
-python3 benchmark_ili_regional.py --step 12 --n-jobs -1
+python3 benchmark_ili_regional.py --step 8 --n-jobs -1
 ```
 
 **Incremental Model Update:**
@@ -106,7 +124,7 @@ python3 benchmark_ili_national.py --model CatBoost --tune --append
 
 - Ingest Italian ILI data from Influcast.
 - Establish classical baselines (ARIMA, SARIMA, ETS, etc.).
-- Evaluate zero-shot performance of Time Series Foundation Models (Chronos, TimesFM 2.5, TiRex).
+- Evaluate zero-shot performance of Time Series Foundation Models (Chronos, TimesFM 2.5, TiRex, TimeGPT).
 - Analyze regional vs. national generalizability.
 
 ## Technical Decisions & Optimizations
@@ -125,6 +143,7 @@ To handle the large number of forecast origins across multiple regions, we imple
 
 ### Model Configurations
 - **AutoARIMA/SARIMA**: Optimized for speed by enabling `stepwise` search and `approximation`.
-- **ML Baselines (LightGBM/XGBoost)**: Implemented using `MLForecast` with recursive lags and **Conformal Prediction** (5 windows) to generate probabilistic outputs.
-- **Foundation Models**: Includes **Chronos**, **TimesFM (2.5)**, and **TiRex (xLSTM)**.
+- **ML Baselines (LightGBM/XGBoost/CatBoost/Ridge)**: Implemented using `MLForecast` with recursive lags and **Conformal Prediction** (5 windows) to generate probabilistic outputs.
+- **Foundation Models**: Includes **Chronos**, **TimesFM (2.5)**, **TiRex (xLSTM)**, and **TimeGPT**.
 - **Probabilistic Forecasting**: All models produce a standardized **23-quantile output** (from 0.01 to 0.99), aligned with the CDC/Influcast standard for epidemic forecasting.
+- **Evaluation Metrics**: Comprehensive suite including point accuracy (MAE, RMSE, sMAPE, MASE) and probabilistic calibration (WIS, CRPS, Pinball Loss, Coverage distance from nominal).
