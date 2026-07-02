@@ -81,14 +81,8 @@ class TimeGPTForecaster(BaseForecaster):
         Returns:
             List of DataFrames, each with columns 'ds', 'quantile', 'value'.
         """
-        # Prepare data for TimeGPT in Nixtla format
-        dfs = []
-        for i, h in enumerate(histories):
-            temp_df = h[['ds', 'y']].copy()
-            temp_df['unique_id'] = f'series_{i}'
-            dfs.append(temp_df)
-        
-        input_df = pd.concat(dfs, ignore_index=True)
+        batch_size = batch_size or 8
+        results = []
         
         # Determine levels for TimeGPT
         levels = []
@@ -99,79 +93,90 @@ class TimeGPTForecaster(BaseForecaster):
                 level = round(abs(q - 0.5) * 2 * 100, 1)
                 levels.append(level)
             levels = sorted(list(set(levels)))
-        
-        # API call
-        forecasts = self.client.forecast(
-            df=input_df,
-            h=horizon,
-            level=levels if levels else None,
-            freq='W-SUN',
-            model='timegpt-1'
-        )
-        
-        # Ensure 'ds' is datetime
-        forecasts['ds'] = pd.to_datetime(forecasts['ds'])
-        
-        results = []
-        for i, history in enumerate(histories):
-            # Filter for this series
-            series_id = f'series_{i}'
-            f = forecasts[forecasts['unique_id'] == series_id].copy()
+
+        for chunk_idx in range(0, len(histories), batch_size):
+            chunk = histories[chunk_idx:chunk_idx + batch_size]
             
-            # Recalculate target dates locally to ensure alignment with our expected freq
-            # even if the API returns slightly different timestamps
-            last_date = pd.to_datetime(history['ds'].iloc[-1])
-            expected_dates = pd.date_range(
-                start=last_date + pd.Timedelta(weeks=1), 
-                periods=horizon, 
-                freq='W-SUN'
+            # Prepare data for TimeGPT in Nixtla format
+            dfs = []
+            for i, h in enumerate(chunk):
+                temp_df = h[['ds', 'y']].copy()
+                temp_df['unique_id'] = f'series_{chunk_idx + i}'
+                dfs.append(temp_df)
+            
+            input_df = pd.concat(dfs, ignore_index=True)
+            
+            # API call
+            forecasts = self.client.forecast(
+                df=input_df,
+                h=horizon,
+                level=levels if levels else None,
+                freq='W-SUN',
+                model='timegpt-1'
             )
             
-            # Map API results to expected dates to handle potential API frequency shifts
-            f['ds'] = expected_dates[:len(f)]
+            # Ensure 'ds' is datetime
+            forecasts['ds'] = pd.to_datetime(forecasts['ds'])
             
-            res_dfs = []
-            
-            # Point forecast
-            res_dfs.append(pd.DataFrame({
-                'ds': f['ds'],
-                'quantile': 0.5,
-                'value': f['TimeGPT']
-            }))
-            
-            if quantiles:
-                for q in quantiles:
-                    if q == 0.5:
-                        continue
+            for i, history in enumerate(chunk):
+                # Filter for this series
+                series_id = f'series_{chunk_idx + i}'
+                f = forecasts[forecasts['unique_id'] == series_id].copy()
+                
+                # Recalculate target dates locally to ensure alignment with our expected freq
+                # even if the API returns slightly different timestamps
+                last_date = pd.to_datetime(history['ds'].iloc[-1])
+                expected_dates = pd.date_range(
+                    start=last_date + pd.Timedelta(weeks=1), 
+                    periods=horizon, 
+                    freq='W-SUN'
+                )
+                
+                # Map API results to expected dates to handle potential API frequency shifts
+                f['ds'] = expected_dates[:len(f)]
+                
+                res_dfs = []
+                
+                # Point forecast
+                res_dfs.append(pd.DataFrame({
+                    'ds': f['ds'],
+                    'quantile': 0.5,
+                    'value': f['TimeGPT']
+                }))
+                
+                if quantiles:
+                    for q in quantiles:
+                        if q == 0.5:
+                            continue
+                            
+                        level = round(abs(q - 0.5) * 2 * 100, 1)
+                        suffix = 'lo' if q < 0.5 else 'hi'
                         
-                    level = round(abs(q - 0.5) * 2 * 100, 1)
-                    suffix = 'lo' if q < 0.5 else 'hi'
-                    
-                    # Try possible column names
-                    level_int = int(level) if level == int(level) else level
-                    col_name = f"TimeGPT-{suffix}-{level_int}"
-                    
-                    if col_name not in f.columns:
-                        col_name = f"TimeGPT-{suffix}-{float(level_int)}"
-                    
-                    if col_name in f.columns:
-                        res_dfs.append(pd.DataFrame({
-                            'ds': f['ds'],
-                            'quantile': q,
-                            'value': f[col_name]
-                        }))
-                    else:
-                        # Fallback to nearest available or point forecast if all fails
-                        potential = [c for c in f.columns if f"TimeGPT-{suffix}-" in c]
-                        if potential:
-                            avail = [float(c.split('-')[-1]) for c in potential]
-                            best_idx = np.argmin([abs(a - level) for a in avail])
+                        # Try possible column names
+                        level_int = int(level) if level == int(level) else level
+                        col_name = f"TimeGPT-{suffix}-{level_int}"
+                        
+                        if col_name not in f.columns:
+                            col_name = f"TimeGPT-{suffix}-{float(level_int)}"
+                        
+                        if col_name in f.columns:
                             res_dfs.append(pd.DataFrame({
                                 'ds': f['ds'],
                                 'quantile': q,
-                                'value': f[potential[best_idx]]
+                                'value': f[col_name]
                             }))
-            
-            results.append(pd.concat(res_dfs, ignore_index=True))
+                        else:
+                            # Fallback to nearest available or point forecast if all fails
+                            potential = [c for c in f.columns if f"TimeGPT-{suffix}-" in c]
+                            if potential:
+                                avail = [float(c.split('-')[-1]) for c in potential]
+                                best_idx = np.argmin([abs(a - level) for a in avail])
+                                res_dfs.append(pd.DataFrame({
+                                    'ds': f['ds'],
+                                    'quantile': q,
+                                    'value': f[potential[best_idx]]
+                                }))
+                
+                results.append(pd.concat(res_dfs, ignore_index=True))
             
         return results
