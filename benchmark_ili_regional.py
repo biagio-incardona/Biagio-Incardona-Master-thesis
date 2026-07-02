@@ -96,6 +96,7 @@ def main():
         'Chronos': (ChronosForecaster, {'model_name': args.model_size, 'num_samples': args.num_samples, 'batch_size': args.batch_size, 'device': args.device}),
         'TimesFM': (TimesFMForecaster, {'batch_size': args.batch_size, 'device': args.device}),
         'TiRex': (TiRexForecaster, {'device': args.device}),
+        'TimeGPT': (TimeGPTForecaster, {}),
     }
 
     if args.model:
@@ -107,7 +108,7 @@ def main():
     else:
         models_to_run = all_models
 
-    sequential_models = ['Chronos', 'TimesFM', 'TiRex']
+    sequential_models = ['Chronos', 'TimesFM', 'TiRex', 'TimeGPT']
     
     completed_models = []
     failed_models = []
