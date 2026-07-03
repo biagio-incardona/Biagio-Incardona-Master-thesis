@@ -8,33 +8,39 @@ from scipy.stats import norm
 
 def MAE(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Mean Absolute Error."""
-    return np.mean(np.abs(y_true - y_pred))
+    return np.nanmean(np.abs(y_true - y_pred))
 
 
 def RMSE(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Root Mean Squared Error."""
-    return np.sqrt(np.mean((y_true - y_pred)**2))
+    return np.sqrt(np.nanmean((y_true - y_pred)**2))
 
 
 def sMAPE(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Symmetric Mean Absolute Percentage Error."""
     denominator = (np.abs(y_true) + np.abs(y_pred)) / 2.0
-    # Avoid division by zero
-    mask = denominator > 0
-    return 100.0 * np.mean(np.abs(y_true[mask] - y_pred[mask]) / denominator[mask])
+    # Avoid division by zero and handle NaNs
+    mask = (denominator > 0) & (~np.isnan(y_true)) & (~np.isnan(y_pred))
+    if not np.any(mask):
+        return np.nan
+    return 100.0 * np.nanmean(np.abs(y_true[mask] - y_pred[mask]) / denominator[mask])
 
 
 def MASE(y_true: np.ndarray, y_pred: np.ndarray, y_train: np.ndarray, periodicity: int = 52) -> float:
     """Mean Absolute Scaled Error (Seasonal)."""
     # Calculate scale from training data (naive seasonal forecast)
-    if len(y_train) <= periodicity:
+    y_train_clean = y_train[~np.isnan(y_train)]
+    if len(y_train_clean) <= periodicity:
         # Fallback to non-seasonal naive if training data is too short
-        scale = np.mean(np.abs(np.diff(y_train)))
+        if len(y_train_clean) < 2:
+            scale = 1.0
+        else:
+            scale = np.nanmean(np.abs(np.diff(y_train_clean)))
     else:
-        scale = np.mean(np.abs(y_train[periodicity:] - y_train[:-periodicity]))
+        scale = np.nanmean(np.abs(y_train[periodicity:] - y_train[:-periodicity]))
     
-    if scale == 0:
-        return np.inf
+    if scale == 0 or np.isnan(scale):
+        scale = 1.0
         
     mae = MAE(y_true, y_pred)
     return mae / scale
@@ -136,16 +142,17 @@ def peak_metrics(y_true_series: pd.Series, y_pred_series: pd.Series) -> Dict[str
     }
 
 
-def evaluate_forecasts(forecasts: pd.DataFrame, truth: pd.DataFrame, train_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+def evaluate_forecasts(forecasts: pd.DataFrame, truth: pd.DataFrame, train_data: Optional[pd.DataFrame] = None, aggregate: bool = True) -> pd.DataFrame:
     """Comprehensive evaluation using all requested academic metrics.
     
     Args:
-        forecasts: Long DataFrame [model, origin, target_date, horizon, quantile, value]
-        truth: DataFrame [ds, y]
-        train_data: Optional training data for MASE calculation.
-        
+         forecasts: Long DataFrame [model, origin, target_date, horizon, quantile, value]
+         truth: DataFrame [ds, y]
+         train_data: Optional training data for MASE calculation.
+         aggregate: If True, returns mean metrics across origins. If False, returns metrics per origin.
+         
     Returns:
-        DataFrame with aggregated metrics per model and horizon.
+         DataFrame with metrics.
     """
     if 'true_value' not in truth.columns and 'y' in truth.columns:
         truth = truth.rename(columns={'y': 'true_value', 'ds': 'target_date'})
@@ -159,70 +166,79 @@ def evaluate_forecasts(forecasts: pd.DataFrame, truth: pd.DataFrame, train_data:
 
     results = []
     
+    # Grouping keys
+    group_keys = ['model', 'horizon']
+    if not aggregate:
+        group_keys.append('origin')
+
     # Group by model and horizon for standard metrics
-    for (model, horizon), group in eval_df.groupby(['model', 'horizon']):
+    for keys, group in eval_df.groupby(group_keys):
+        if aggregate:
+            model, horizon = keys
+            origin = None
+        else:
+            model, horizon, origin = keys
         
         # 1. Point Metrics (Median/Mean)
         point_group = group[np.isclose(group['quantile'], 0.5)].copy()
         if not point_group.empty:
-            y_t = point_group['true_value'].values
-            y_p = point_group['value'].values
+            # Drop rows with NaNs in true_value or value
+            point_group = point_group.dropna(subset=['true_value', 'value'])
             
-            mae = MAE(y_t, y_p)
-            rmse = RMSE(y_t, y_p)
-            smape = sMAPE(y_t, y_p)
-            
-            # MASE
-            mase = np.nan
-            if train_data is not None:
-                mase = MASE(y_t, y_p, train_data['y'].values)
+            if not point_group.empty:
+                y_t = point_group['true_value'].values
+                y_p = point_group['value'].values
+                
+                mae = MAE(y_t, y_p)
+                rmse = RMSE(y_t, y_p)
+                smape = sMAPE(y_t, y_p)
+                
+                # MASE
+                mase = np.nan
+                if train_data is not None:
+                    train_y = train_data['true_value'].values if 'true_value' in train_data.columns else train_data['y'].values
+                    mase = MASE(y_t, y_p, train_y)
+            else:
+                mae = rmse = smape = mase = np.nan
         else:
             mae = rmse = smape = mase = np.nan
 
-        # 2. Probabilistic Metrics (Averaged across origins)
+        # 2. Probabilistic Metrics
         wis_list = []
         pinball_list = []
         crps_list = []
         cov_95_list = []
         
-        for (origin, target_date), sub_group in group.groupby(['origin', 'target_date']):
+        # Inner group by origin and target_date to handle multiple horizons per origin
+        for (sub_origin, target_date), sub_group in group.groupby(['origin', 'target_date']):
             y_true = sub_group['true_value'].iloc[0]
-            # Sort quantiles to ensure integration order
+            if np.isnan(y_true):
+                continue
+                
             sub_group = sub_group.sort_values('quantile')
             qs = sub_group['quantile'].values
             vals = sub_group['value'].values
+            if np.any(np.isnan(vals)):
+                continue
             
-            # WIS
             wis_list.append(WIS(y_true, qs, vals))
-            
-            # Mean Pinball Loss across all quantiles
             pb_losses = np.array([pinball_loss(y_true, q, v) for q, v in zip(qs, vals)])
-            mean_pb = np.mean(pb_losses)
-            pinball_list.append(mean_pb)
+            pinball_list.append(np.mean(pb_losses))
             
-            # CRPS via trapezoidal integration of 2 * pinball_loss across alpha
-            # Integral over [0,1] of 2 * PL(alpha) d_alpha
-            # We approximate with trapezoids between known quantiles
             crps_val = 0
             for i in range(len(qs) - 1):
                 delta_q = qs[i+1] - qs[i]
                 avg_loss = (pb_losses[i+1] + pb_losses[i]) / 2.0
                 crps_val += 2.0 * delta_q * avg_loss
-            
-            # Add boundary pieces (optional but more robust)
-            # From 0 to min(q) and max(q) to 1
             crps_val += 2.0 * qs[0] * pb_losses[0]
             crps_val += 2.0 * (1.0 - qs[-1]) * pb_losses[-1]
-            
             crps_list.append(crps_val)
             
-            # 95% Coverage (q=0.025 to q=0.975)
-            # Find closest to 0.025 and 0.975
             idx_low = np.argmin(np.abs(qs - 0.025))
             idx_high = np.argmin(np.abs(qs - 0.975))
             cov_95_list.append(coverage(y_true, vals[idx_low], vals[idx_high]))
             
-        results.append({
+        res_dict = {
             'model': model,
             'horizon': horizon,
             'MAE': mae,
@@ -232,8 +248,15 @@ def evaluate_forecasts(forecasts: pd.DataFrame, truth: pd.DataFrame, train_data:
             'WIS': np.mean(wis_list) if wis_list else np.nan,
             'CRPS': np.mean(crps_list) if crps_list else np.nan,
             'PinballLoss': np.mean(pinball_list) if pinball_list else np.nan,
-            'Coverage95': np.mean(cov_95_list) if cov_95_list else np.nan
-        })
+            'Coverage95': np.mean(cov_95_list) if cov_95_list else np.nan,
+            'Coverage95_Dist': np.abs(0.95 - np.mean(cov_95_list)) if cov_95_list else np.nan
+        }
+        if not aggregate:
+            res_dict['origin'] = origin
+            
+        results.append(res_dict)
+
+    return pd.DataFrame(results)
 
     # 3. Peak Metrics (Calculated per season-forecast)
     # This is more complex as it needs the full forecasted trajectory.

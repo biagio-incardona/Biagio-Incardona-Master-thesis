@@ -14,7 +14,7 @@ mlforecast
 lightgbm
 xgboost
 utilsforecast
-chronos-forecasting
+chronos-forecasting>=2.0.0
 torch
 transformers
 accelerate
@@ -23,3 +23,4 @@ timesfm @ git+https://github.com/google-research/timesfm.git
 tirex @ git+https://github.com/NX-AI/tirex.git
 nixtla
 python-dotenv
+catboost

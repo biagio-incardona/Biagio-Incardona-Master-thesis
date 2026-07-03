@@ -1,0 +1,14 @@
+{
+    "period_covered": "2012-01-08 to 2018-08-19",
+    "num_regions": 2,
+    "horizons": [
+        1,
+        2,
+        4,
+        8
+    ],
+    "completed_models": [
+        "MovingAverage"
+    ],
+    "failed_models": []
+}
