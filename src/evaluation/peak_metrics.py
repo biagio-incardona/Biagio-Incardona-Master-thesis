@@ -17,6 +17,20 @@ def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame
     Returns:
         DataFrame with peak metrics per model and season.
     """
+    # Ensure dates are datetime
+    forecasts = forecasts.copy()
+    forecasts['target_date'] = pd.to_datetime(forecasts['target_date'])
+    truth = truth.copy()
+    truth['target_date'] = pd.to_datetime(truth['target_date'])
+    
+    # Map target_date to calendar_ds if calendar_ds is present in truth
+    if 'calendar_ds' in truth.columns:
+        truth['calendar_ds'] = pd.to_datetime(truth['calendar_ds'])
+        ds_to_cal = dict(zip(truth['target_date'], truth['calendar_ds']))
+        # Map in forecasts and truth
+        forecasts['target_date'] = forecasts['target_date'].map(ds_to_cal)
+        truth['target_date'] = truth['target_date'].map(ds_to_cal)
+        
     # Use only median forecasts
     point_fcsts = forecasts[np.isclose(forecasts['quantile'], 0.5)].copy()
     
@@ -60,13 +74,21 @@ def calculate_seasonal_peak_metrics(forecasts: pd.DataFrame, truth: pd.DataFrame
             pred_peak_val = s_pred['value'].max()
             
             timing_error = (pred_peak_date - true_peak_date).days / 7.0 # weeks
-            intensity_error_rel = (pred_peak_val - true_peak_val) / true_peak_val
+            if true_peak_val == 0:
+                intensity_error_rel = np.nan
+            else:
+                intensity_error_rel = (pred_peak_val - true_peak_val) / true_peak_val
             
             results.append({
                 'model': model,
                 'season': f"{start[:4]}-{end[:4]}",
                 'horizon': horizon if horizon is not None else 'latest',
+                'true_peak_date': true_peak_date,
+                'pred_peak_date': pred_peak_date,
                 'peak_timing_error_weeks': timing_error,
+                'true_peak_val': true_peak_val,
+                'pred_peak_val': pred_peak_val,
+                'peak_intensity_error_abs': abs(pred_peak_val - true_peak_val),
                 'peak_intensity_error_rel': intensity_error_rel
             })
             

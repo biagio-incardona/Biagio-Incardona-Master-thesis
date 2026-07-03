@@ -15,3 +15,10 @@ GAP_ANALYSIS.md
 DEVELOPMENT_LOG.md
 BUILD_DOCS.md
 TECHNICAL_GAPS.md
+*.pdf
+*.png
+run_info.json
+RUN_REPORT.md
+scratch/
+old_notebooks/
+notebook_completo_to_be_reviewed.ipynb

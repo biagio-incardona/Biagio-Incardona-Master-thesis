@@ -43,7 +43,7 @@ def main():
     parser = argparse.ArgumentParser(description='National ILI Model Benchmarking')
     parser.add_argument('--dry-run', action='store_true', help='Run a quick check with one model and few origins')
     parser.add_argument('--model', type=str, default=None, help='Run only a specific model')
-    parser.add_argument('--append', action='store_true', help='Append to existing results/national/all_models_forecasts.csv')
+    parser.add_argument('--append', action='store_true', help='Append to existing results/national/backtest_predictions.csv')
     parser.add_argument('--n-jobs', type=int, default=-1, help='Number of jobs for parallel execution (default: -1)')
     parser.add_argument('--min-train', type=int, default=156, help='Minimum training weeks (default: 156 = 3 years)')
     parser.add_argument('--step', type=int, default=4, help='Step size between origins (default: 4)')
@@ -55,6 +55,7 @@ def main():
     parser.add_argument('--num-samples', type=int, default=1000, help='Number of samples for foundation models')
     parser.add_argument('--batch-size', type=int, default=1, help='Batch size for foundation model inference')
     parser.add_argument('--tune', action='store_true', help='Tune hyperparameters for ML models')
+    parser.add_argument('--device', type=str, default=None, choices=['cpu', 'cuda', 'mps'], help='Override default device for deep learning models')
     args = parser.parse_args()
 
     # Load data
@@ -106,18 +107,18 @@ def main():
         'XGBoost': (XGBoostForecaster, {}),
         'CatBoost': (CatBoostForecaster, {}),
         'Ridge': (RidgeForecaster, {}),
-        'Chronos': (ChronosForecaster, {'model_name': args.model_size, 'num_samples': args.num_samples, 'batch_size': args.batch_size}),
-        'TimesFM': (TimesFMForecaster, {'batch_size': args.batch_size}),
-        'TiRex': (TiRexForecaster, {'batch_size': args.batch_size}),
+        'Chronos': (ChronosForecaster, {'model_name': args.model_size, 'num_samples': args.num_samples, 'batch_size': args.batch_size, 'device': args.device}),
+        'TimesFM': (TimesFMForecaster, {'batch_size': args.batch_size, 'device': args.device}),
+        'TiRex': (TiRexForecaster, {'batch_size': args.batch_size, 'device': args.device}),
         'TimeGPT': (TimeGPTForecaster, {})
     }
     
     # Filter if specific model requested
     if args.model:
-        if args.model in all_models:
-            models_to_run = {args.model: all_models[args.model]}
-        else:
-            print(f"Model {args.model} not found in registry.")
+        requested_models = [m.strip() for m in args.model.split(',')]
+        models_to_run = {m: all_models[m] for m in requested_models if m in all_models}
+        if not models_to_run:
+            print(f"None of the requested models {args.model} were found in the registry.")
             return
     elif args.dry_run:
         models_to_run = {'Naive': all_models['Naive']}
@@ -129,7 +130,7 @@ def main():
     
     existing_forecasts = None
     if args.append:
-        full_forecast_file = os.path.join(output_dir, "all_models_forecasts.csv")
+        full_forecast_file = os.path.join(output_dir, "backtest_predictions.csv")
         if os.path.exists(full_forecast_file):
             print(f"Loading existing forecasts from {full_forecast_file} for appending...")
             existing_forecasts = pd.read_csv(full_forecast_file)
@@ -233,7 +234,7 @@ def main():
 
     full_forecasts['target_date'] = pd.to_datetime(full_forecasts['target_date'])
     
-    full_forecast_file = os.path.join(output_dir, "all_models_forecasts.csv")
+    full_forecast_file = os.path.join(output_dir, "backtest_predictions.csv")
     full_forecasts.to_csv(full_forecast_file, index=False)
     
     print("Calculating metrics...")
@@ -301,7 +302,7 @@ def main():
     print(f"Visualizations saved to {vis_dir}")
 
     if not metrics_df.empty:
-        metrics_file = os.path.join(output_dir, "all_models_metrics.csv")
+        metrics_file = os.path.join(output_dir, "backtest_summary.csv")
         metrics_df.to_csv(metrics_file, index=False)
         
         if not peak_metrics_df.empty:
