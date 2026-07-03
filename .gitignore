@@ -4,6 +4,10 @@ __pycache__/
 .DS_Store
 *.pyc
 *.csv
+!results/national/*
+!results/regional/*
+!results/national/*.csv
+!results/regional/*.csv
 venv/
 env/
 .idea/

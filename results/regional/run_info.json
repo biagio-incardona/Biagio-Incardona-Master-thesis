@@ -1,6 +1,6 @@
 {
     "period_covered": "2012-01-08 to 2018-08-19",
-    "num_regions": 2,
+    "num_regions": 21,
     "horizons": [
         1,
         2,
@@ -8,7 +8,23 @@
         8
     ],
     "completed_models": [
-        "MovingAverage"
+        "TimeGPT",
+        "Naive",
+        "SeasonalNaive",
+        "Drift",
+        "MovingAverage",
+        "ETS",
+        "ARIMA",
+        "SARIMA",
+        "Prophet",
+        "Ridge",
+        "LightGBM",
+        "XGBoost",
+        "CatBoost",
+        "Chronos-V2",
+        "Chronos-Bolt-small",
+        "TimesFM",
+        "TiRex"
     ],
     "failed_models": []
 }
