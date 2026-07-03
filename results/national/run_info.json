@@ -1,0 +1,14 @@
+{
+    "period_covered": "2003-10-19 to 2015-07-26",
+    "num_origins": 113,
+    "horizons": [
+        1,
+        2,
+        4,
+        8
+    ],
+    "completed_models": [
+        "TimeGPT"
+    ],
+    "failed_models": []
+}
