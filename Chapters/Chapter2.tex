@@ -1,0 +1,727 @@
+% Chapter 2 - Methodology (Methods)
+
+\chapter{Methodology}
+\label{ch:methodology}
+
+This chapter presents the methodology used to compare and evaluate various forecasting models for Influenza-Like Illness (ILI) in Italy. We analyze traditional statistical baselines, machine learning models, and zero-shot time series foundation models. The chapter is organized as follows. First, we outline the clinical context and describe the data collection and preprocessing strategies. Subsequently, we present the mathematical formulation of each forecasting model in our catalog. Finally, we detail the calibration methods, the backtesting framework, and the evaluation metrics.
+
+%----------------------------------------------------------------------------------------
+%	SECTION 1: DOMAIN CONTEXT, DATA INGESTION, AND SCOPE
+%----------------------------------------------------------------------------------------
+
+\section{Domain Context, Data Ingestion, and Scope}
+
+Our study is based on the surveillance of Influenza-Like Illness (ILI) in Italy. Syndromic surveillance is essential for public health planning. It enables the early detection of seasonal epidemics and tracks the spatiotemporal spread of respiratory pathogens. Furthermore, it assists healthcare authorities in resource allocation. By monitoring symptoms rather than relying on laboratory confirmation, public health agencies can identify population-level trends in a timely manner.
+
+%-----------------------------------
+%	SUBSECTION 1.1: THE ITALIAN SENTINEL SURVEILLANCE INFRASTRUCTURE
+%-----------------------------------
+\subsection{The Italian Sentinel Surveillance Infrastructure}
+In Italy, ILI surveillance is managed by the \textbf{Istituto Superiore di Sanità (ISS)} in collaboration with the Ministry of Health, utilizing the \textbf{RespiVirNet} national network (formerly InfluNet) \cite{respivirnet}. This network aggregates weekly reports from sentinel general practitioners (GPs) and pediatricians who are recruited based on geographic and demographic criteria to ensure representative coverage of the Italian population. On average, the network monitors between 1\% and 2\% of the national population, spanning all 21 NUTS-2 administrative divisions (19 regions and two autonomous provinces).
+
+The data collection process operates on a weekly cycle. During the active surveillance period, participating physicians record the number of patients presenting with symptoms that meet the standardized ILI case definition. They also report their total active patient registry, referred to as the assisted population. These weekly counts are uploaded to a central database managed by the ISS for validation and aggregation. The weekly incidence rate $I_t$ is computed as the number of cases per 1,000 assisted individuals:
+\begin{equation}
+I_t = \frac{\sum_{i \in \mathcal{D}_t} C_{i, t}}{\sum_{i \in \mathcal{D}_t} A_{i, t}} \times 1000
+\end{equation}
+where $C_{i, t}$ is the number of ILI cases reported by sentinel physician $i$ during week $t$, $A_{i, t}$ represents the assisted population of physician $i$ in week $t$, and $\mathcal{D}_t$ denotes the set of active sentinel physicians during week $t$. The ISS publishes these incidence reports every Friday, reflecting the epidemiological situation of the previous week (from Monday to Sunday).
+
+To ensure representative demographic coverage, clinicians are recruited based on population density at the local health unit (\textit{Azienda Sanitaria Locale}, ASL) level. General practitioners (\textit{Medici di Medicina Generale}, MMG) monitor the population aged 15 and older, whereas sentinel pediatricians (\textit{Pediatri di Libera Scelta}, PLS) monitor children aged 0 to 14. This stratified sampling design captures age-specific transmission dynamics. Typically, school-aged children exhibit earlier infection onset and act as key drivers of community transmission, whereas elderly and vulnerable populations face a higher risk of severe complications, hospitalization, and mortality. Data transmitted from clinics to the ISS undergo automated validation procedures; reports exhibiting anomalous incidence rates or unexpected spikes are flagged for manual verification by epidemiological experts.
+
+Sentinel surveillance networks such as RespiVirNet are invaluable for establishing stable, long-term baselines of disease activity. Unlike hospital-based surveillance, which primarily monitors severe cases, sentinel networks capture mild-to-moderate infections managed in primary care, providing a more representative picture of community-level transmission. Nonetheless, these systems are highly sensitive to reporting compliance. Increased clinical workloads or holiday periods (such as Christmas and Easter) can introduce reporting delays. These delays result in retrospective data revisions and noise, requiring forecasting models to exhibit robustness against reporting anomalies.
+
+%-----------------------------------
+%	SUBSECTION 1.2: CLINICAL CHARACTERIZATION OF INFLUENZA-LIKE ILLNESS
+%-----------------------------------
+\subsection{Clinical Characterization of Influenza-Like Illness}
+To ensure epidemiological consistency across European Union member states, the clinical case definition of ILI is standardized by the European Centre for Disease Prevention and Control (ECDC) \cite{ecdc_definition}. Under these criteria, a case is defined by a sudden onset of symptoms combining at least one systemic and one respiratory symptom. Specifically, the clinical presentation must include:
+\begin{itemize}
+    \item \textbf{Systemic Symptoms:} At least one systemic symptom, including fever or feverishness ($\ge 38.0^\circ\text{C}$), headache, myalgia (muscle pain), or general malaise.
+    \item \textbf{Respiratory Symptoms:} At least one respiratory symptom, including a cough, sore throat, or dyspnea (shortness of breath).
+\end{itemize}
+
+Physiologically, these clinical manifestations reflect the host immune response to viral replication. Systemic manifestations, including fever and myalgia, are mediated by the systemic release of pro-inflammatory cytokines---primarily interleukin-1 (IL-1), interleukin-6 (IL-6), and tumor necrosis factor-alpha (TNF-$\alpha$)---secreted by innate immune cells upon detection of viral pathogen-associated molecular patterns (PAMPs). Conversely, localized respiratory symptoms, such as cough and sore throat (associated with pharyngitis), result from cytopathic viral damage to the epithelial lining and subsequent localized inflammatory infiltration.
+
+Syndromic surveillance based on these clinical criteria provides a highly efficient approach for monitoring community-level transmission. While laboratory validation (such as RT-PCR) is required to identify the specific viral agent, universal laboratory testing is logistically and financially impractical for real-time surveillance. The clinical case definition thus serves as a reliable proxy, capturing the overall burden of disease and providing public health authorities with timely data for operational decision-making.
+
+However, due to the symptom-based nature of syndromic surveillance, the clinical ILI case definition exhibits substantial symptomatic overlap with infections caused by other respiratory pathogens, including Respiratory Syncytial Virus (RSV), rhinoviruses, adenoviruses, human metapneumoviruses, and endemic coronaviruses. This etiological heterogeneity introduces non-influenza noise into the time series. Consequently, the positive predictive value (PPV) of the clinical ILI definition is highly dependent on viral prevalence, peaking during mid-winter when influenza circulation is dominant, and declining in early autumn and late spring as non-influenza pathogens prevail. For instance, RSV epidemics often precede the influenza season, contributing to an early rise in the ILI rate, whereas rhinoviruses typically sustain the baseline incidence during transitional periods (early autumn and late spring).
+
+%-----------------------------------
+%	SUBSECTION 1.3: THE TRANSITION TO ACUTE RESPIRATORY INFECTIONS (ARI)
+%-----------------------------------
+\subsection{The Transition to Acute Respiratory Infections (ARI)}
+Starting from the 2025--2026 transmission season, the Italian surveillance framework transitioned its primary focus from Influenza-Like Illness (ILI) to Acute Respiratory Infections (ARI). The ARI case definition is broader, encompassing a wider range of respiratory pathogens including RSV and SARS-CoV-2. Nevertheless, this study intentionally restricts its scope to the historical ILI time series. This choice is methodologically motivated: the historical ILI dataset provides over two decades of consistent weekly observations (from 2003 to 2025). This extensive, high-quality historical record is indispensable for robustly training and evaluating both local statistical models and high-capacity zero-shot time series foundation models.
+
+Adopting the new ARI definition as the target variable would introduce a significant structural break (or concept drift) in the time series. A change in the clinical case definition alters the underlying data-generating process, shifting the conditional distribution of the target variable. Such shifts degrade the predictive performance of models trained on historical data, particularly those requiring long training horizons. By focusing exclusively on the ILI series, we ensure that models are evaluated on consistent historical epidemiological dynamics, avoiding confounding effects associated with case-definition transitions.
+
+From a mathematical perspective, let $y_t$ represent the observed time series. If a structural break occurs at time $T_{\text{break}}$ due to the case definition transition, the underlying data-generating process (DGP) shifts:
+\begin{equation}
+y_t = \begin{cases}
+f(\mathbf{X}_t) + \epsilon_t & \text{for } t < T_{\text{break}} \\
+g(\mathbf{X}_t) + \eta_t & \text{for } t \ge T_{\text{break}}
+\end{cases}
+\end{equation}
+where $\mathbf{X}_t \in \mathbb{R}^p$ represents the vector of predictors (such as past autoregressive lags and temporal covariates), $f$ and $g$ are distinct mapping functions ($f \neq g$), and $\epsilon_t$ and $\eta_t$ are independent, zero-mean white noise processes with unequal variances ($\sigma_{\epsilon}^2 \neq \sigma_{\eta}^2$, where $\sigma_{\epsilon}^2 = \operatorname{Var}(\epsilon_t)$ and $\sigma_{\eta}^2 = \operatorname{Var}(\eta_t)$). This change renders past parameter estimates suboptimal or biased for local models. It also creates severe concept drift for machine learning models, forcing them to learn a new mapping from features to the target variable. By restricting our analysis to the historical ILI series, we preserve the structural consistency and long-term dynamics of the data-generating process, thereby enabling a consistent and rigorous comparison of the forecasting models.
+
+While the transition to ARI surveillance is clinically valuable for public health---providing a holistic view of co-circulating respiratory pathogens---long-term longitudinal consistency is paramount for statistical modeling. A structural break would introduce substantial epistemic uncertainty, altering the functional relationship between predictors and the target variable. Focusing on the ILI series thus establishes a stable, high-fidelity benchmark to compare the relative strengths of various forecasting paradigms.
+
+%-----------------------------------
+%	SUBSECTION 1.4: INGESTION ENGINE AND SOURCE TRACKING
+%-----------------------------------
+\subsection{Ingestion Engine and Source Tracking}
+The data ingestion pipeline (implemented in \texttt{src/data/ingestion.py}) dynamically scans and extracts surveillance data across all geographic regions. Rather than relying on a static, hardcoded list of regions, the engine recursively queries the directory structure of each season, spanning from the historical \texttt{2003--2004} season to the most recent periods.
+
+The raw surveillance files are organized by season within the \texttt{sorveglianza/ILI/} directory. Within each season's subdirectory, the pipeline searches for a \texttt{latest/} folder containing consolidated and validated records. These files contain the finalized, retrospectively corrected historical reports. The ingestion engine first attempts to load this consolidated file:
+\begin{equation*}
+\text{File}_{\text{consolidated}} = \text{\texttt{sorveglianza/ILI/YYYY-YYYY/latest/\{region\}-latest-ILI.csv}}
+\end{equation*}
+If the consolidated file is unavailable---typically during an ongoing surveillance season before final data consolidation---the engine falls back to processing the raw weekly files, which are indexed by the specific year and week number:
+\begin{equation*}
+\text{File}_{\text{weekly}} = \text{\texttt{sorveglianza/ILI/YYYY-YYYY/\{region\}-YYYY\_WW-ILI.csv}}
+\end{equation*}
+The engine identifies all available weekly files for a given region, orders them chronologically, and selects the most recent update. This robust fallback mechanism ensures that the dataset always incorporates the most up-to-date surveillance records. To ensure complete reproducibility, the pipeline writes the paths of the selected files to \texttt{data/processed/source\_files\_index.csv}.
+
+This automated search eliminates manual data selection errors and ensures the ingestion of the most recent surveillance updates. In public health databases, historical counts are frequently revised retrospectively as delayed reports are processed. By prioritizing consolidated files and falling back to weekly files only when necessary, the ingestion engine preserves the integrity of the data. The generated index file serves as a provenance record, mapping each region and season to its exact source file.
+
+%-----------------------------------
+%	SUBSECTION 1.5: GEOGRAPHIC GRANULARITY AND ADMINISTRATIVE LEVELS
+%-----------------------------------
+\subsection{Geographic Granularity and Administrative Levels}
+Our evaluation covers 22 geographic areas, stratified into two levels:
+\begin{itemize}
+    \item \textbf{National Level:} This represents the aggregated surveillance data for the entirety of Italy. It exhibits a high signal-to-noise ratio and displays smooth, well-defined seasonal waves, as regional variations are smoothed out by aggregation. The national time series represents the aggregate epidemiological burden and serves as the primary indicator for national public health policy formulation.
+    \item \textbf{Regional Level:} This comprises 21 subnational jurisdictions, consisting of the 19 Italian regions and the two Autonomous Provinces of Trento and Bolzano (corresponding to NUTS-2 administrative divisions). This panel provides a heterogeneous collection of time series, with population sizes spanning orders of magnitude, from over 10 million in Lombardy to approximately 120,000 in Valle d'Aosta. Variability in reporting compliance and local transmission dynamics introduce substantial noise, making the regional panel a rigorous testbed for forecasting models.
+\end{itemize}
+
+The regional datasets exhibit high diversity. In low-population regions (e.g., Valle d'Aosta and Molise), the surveillance network relies on a small number of sentinel physicians, leading to higher sampling variance and noise in the weekly incidence rates. Conversely, highly populated regions (e.g., Lombardy, Lazio, and Veneto) aggregate a large number of reports, producing smoother incidence curves. Geographic and climatic heterogeneity also influence transmission: mountain ranges in the north and temperate climates in the south affect the spatiotemporal propagation of the pathogen, resulting in distinct peak timings and intensities across regions.
+
+This diversity enables the evaluation of forecasting models across varying noise regimes. Models that perform well on the clean, aggregated national series may degrade on noisy regional data due to overfitting or parameter instability. Evaluating models on both national and regional panels allows us to assess their generalization and robustness. While regional results are averaged to summarize global performance, individual regional evaluations are preserved to identify spatial patterns in model accuracy.
+
+%----------------------------------------------------------------------------------------
+%	SECTION 2: PREPROCESSING AND TIME-INDEXING STRATEGIES
+%----------------------------------------------------------------------------------------
+
+\section{Preprocessing and Time-Indexing Strategies}
+
+A primary challenge in modeling epidemic time series is their highly seasonal nature, combined with the suspension of surveillance during the summer off-season. Active influenza surveillance in Italy is conducted from mid-autumn to mid-spring, typically beginning in ISO Week 42 (mid-October) and concluding in ISO Week 17 of the subsequent year (late April). This surveillance window is designed to encompass the primary transmission period, while resources are conserved by deactivating the system during the summer months.
+
+To address the seasonal gaps, we implemented and compared two distinct time-indexing and preprocessing strategies. The choice of strategy is critical, as it directly influences parameter estimation in local statistical models and zero-shot transfer performance in foundation models.
+
+%-----------------------------------
+%	SUBSECTION 2.1: THE SEASONAL NATURE OF INFLUENZA SURVEILLANCE
+%-----------------------------------
+\subsection{The Seasonal Nature of Influenza Surveillance}
+The seasonality of influenza is driven by a complex interplay of environmental factors, host physiology, and human behavior. In temperate climates such as Italy, influenza circulation exhibits a distinct winter seasonality, typically peaking in January or February. Low temperatures and low absolute humidity enhance the stability and suspension lifetime of viral aerosols in the air, while potentially impairing the host's mucosal immune defense in the upper respiratory tract. Concurrently, behavioral changes during winter---such as increased indoor crowding and reduced ventilation---facilitate aerosol and droplet transmission.
+
+Consequently, active surveillance is restricted to the transmission season. Suspending data collection during the summer (from late April to mid-October, corresponding to ISO Weeks 18 to 41) optimizes public health resource allocation, but introduces recurring gaps in the time series. These seasonal gaps present a methodological challenge for forecasting algorithms, as classical models generally assume continuous, regularly spaced time steps to estimate parameters and generate coherent multi-step forecasts.
+
+%-----------------------------------
+%	SUBSECTION 2.2: CALENDAR TIME-INDEXING AND SUMMER GAP MITIGATION
+%-----------------------------------
+\subsection{Calendar Time-Indexing and Summer Gap Mitigation}
+Under calendar time-indexing (configured via the flag \texttt{--time-index calendar}), the time series maintains its physical calendar dates. The summer weeks (ISO Weeks 18 to 41) are reintroduced into the dataset, and the missing surveillance counts are imputed with zeros (\texttt{0.0}) (via the \texttt{--fill-zeros} flag) or small baseline constants.
+
+Although conceptually straightforward to implement, imputing summer gaps with zeros introduces artificial plateaus. Mathematically, these constant segments represent a zero-variance structure that is unrepresentative of active transmission periods. In spectral analysis, the resulting sharp transitions introduce high-frequency artifacts that distort the empirical autocorrelation structure, thereby biasing parameter estimation in autoregressive models.
+
+For zero-shot foundation models, these constant segments represent out-of-distribution (OOD) states. These models are pre-trained primarily on continuous physical or financial time series (e.g., weather, energy, or stock prices) that rarely feature prolonged sequences of exact zeros. During inference, these artificial flat lines can destabilize the models, leading to forecasting pathologies such as trend collapse or persistent flat-line predictions.
+
+Spectral analysis demonstrates that transitions between active surveillance periods and exact zero plateaus introduce high-frequency components that decay slowly. Specifically, let $y(t)$ represent the time series in continuous time. A sharp transition from active surveillance levels to a zero plateau at time $t_0$ can be modeled locally using a step-down function of the form $C(1 - u(t - t_0))$, where $u(t)$ is the Heaviside step function and $C > 0$ represents the active baseline level. In the sense of tempered distributions, the Fourier transform of this step transition for $\omega \neq 0$ is proportional to $1/(i\omega)$. The slow decay of order $\mathcal{O}(|\omega|^{-1})$ in the frequency domain is associated with high-frequency spectral leakage and the Gibbs phenomenon during reconstruction. Autoregressive models (e.g., ARIMA) rely on the empirical autocorrelation structure and may estimate distorted coefficients to fit these artificial discontinuities, thereby degrading forecasting performance during the active transmission season.
+
+Furthermore, when processing zero-filled summer gaps, the self-attention mechanisms in these models can suffer from attention saturation or state collapse, leading to a forecasting pathology where the model continues to predict flat-line zeros even after the onset of the subsequent transmission season.
+
+%-----------------------------------
+%	SUBSECTION 2.3: EPIDEMIC TIME-INDEXING (DEFAULT MODE)
+%-----------------------------------
+\subsection{Epidemic Time-Indexing}
+To mitigate the issues associated with summer gaps, the preprocessing pipeline defaults to \textbf{Epidemic Time-Indexing} (configured via the flag \texttt{--time-index epidemic} and implemented in \texttt{src/data/preprocessing.py}). Under this strategy, summer weeks are omitted entirely, and only active surveillance weeks are concatenated.
+
+Let $\mathcal{T}_{\text{active}} = \{\tau_1, \tau_2, \dots, \tau_N\}$ denote the calendar dates of active weeks, and let $\{y(\tau_n)\}_{n=1}^N$ be the observed incidence values. The preprocessing engine maps these observations to a synthetic, continuous \texttt{DatetimeIndex} \texttt{ds} $= \{t_1, t_2, \dots, t_N\}$ defined as:
+\begin{equation}
+t_n = \tau_1 + (n - 1) \times 7 \text{ days}
+\end{equation}
+This mapping extracts active weeks and joins them into a continuous, gap-free sequence. The original calendar dates $\tau_n$ are preserved in a metadata column named \texttt{calendar\_ds} for visualization. The forecasting models receive a series with a regular weekly frequency (\texttt{W-SUN}) starting from the initial date $\tau_1$, satisfying the strict indexing requirements of libraries such as \texttt{StatsForecast} and \texttt{MLForecast}.
+
+By removing these artificial zero-valued intervals, models are trained directly on the transition dynamics between successive epidemic waves. This preserves the underlying autoregressive structure, ensuring that models learn the true velocity of transmission rather than adapting to artificial plateaus.
+
+%-----------------------------------
+%	SUBSECTION 2.4: MATHEMATICAL PROPERTIES OF WARPED AUTOCORRELATION
+%-----------------------------------
+\subsection{Mathematical Properties of Warped Autocorrelation}
+Mathematically, concatenating active periods can be formalized as a piecewise time-warping function that projects the end of one transmission season directly adjacent to the start of the next. Although this maintains autoregressive continuity, it introduces a boundary discontinuity where the late spring of season $Y$ connects to the early autumn of season $Y+1$. Biologically, however, this transition represents a more plausible epidemiological state shift than an artificial plateau of zeros, enabling models to capture the transition dynamics between successive epidemic waves.
+
+For a stationary process $y_t$, let the Autocorrelation Function (ACF) at lag $k$ be defined as:
+\begin{equation}
+\rho(k) = \frac{\operatorname{Cov}(y_t, y_{t-k})}{\operatorname{Var}(y_t)}
+\end{equation}
+Under calendar time-indexing, the ACF exhibits a strong seasonal peak at $k = 52$ weeks, reflecting the annual cycle, although the magnitude of this peak is attenuated by the zero-valued summer gaps. Under epidemic time-indexing, the seasonal period is compressed. Since each season contains approximately 28 weeks of active surveillance, the compressed seasonal period becomes:
+\begin{equation}
+P_{\text{compressed}} \approx 28 \text{ weeks}
+\end{equation}
+This temporal warping shifts the spectral density and the corresponding peaks of the ACF. For instance, a 52-week lag under calendar time-indexing represents exactly one calendar year. Under epidemic time-indexing, however, a lag of 52 weeks corresponds to 52 active surveillance weeks (approximately 1.86 seasons). Models with hardcoded seasonal parameters must adapt to this compressed periodicity; otherwise, employing a calendar-based seasonal lag (e.g., $S=52$) on warped data will lead to model misspecification and the identification of seasonal patterns at spurious lags.
+
+Time warping also alters the Partial Autocorrelation Function (PACF), which measures the correlation between $y_t$ and $y_{t-k}$ after controlling for the linear dependence of intermediate lags. Under calendar time-indexing, the zero-filled summer segments force the PACF to decay rapidly, failing to capture cross-seasonal dependencies. Conversely, under epidemic time-indexing, the PACF captures predictive relationships between the decay phase of season $Y$ and the onset phase of season $Y+1$. Although the boundary transition is not physically continuous, the warped PACF reveals that the initiation of season $Y+1$ remains statistically dependent on the peak and decay dynamics of the preceding season. This cross-seasonal dependency is crucial for long-horizon forecasts (e.g., $h=8$ weeks) that span seasonal boundaries.
+
+%----------------------------------------------------------------------------------------
+%	SECTION 3: THEORETICAL PARADIGMS OF FORECASTING MODELS
+%----------------------------------------------------------------------------------------
+
+\section{Theoretical Paradigms of Forecasting Models}
+
+Our benchmark compares models spanning three distinct mathematical paradigms, each representing a different approach to time series analysis:
+
+%-----------------------------------
+%	SUBSECTION 3.1: LOCAL STATISTICAL MODELS VS GLOBAL MACHINE LEARNING
+%-----------------------------------
+\subsection{Local Statistical Models vs. Global Machine Learning}
+The fundamental distinction between local statistical models and global machine learning models lies in parameter estimation and cross-series information sharing. Local models (e.g., ARIMA, SARIMA, and ETS) are fitted independently to each time series. They assume a data-generating process governed by a linear stochastic structure with a small parameter space, typically estimated via Maximum Likelihood Estimation (MLE) or Conditional Sum of Squares (CSS). Although highly interpretable and stable, local models have a constrained representational capacity and cannot leverage shared information across different series.
+
+In contrast, global machine learning models (e.g., LightGBM, XGBoost, and CatBoost) reformulate forecasting as a supervised tabular regression task. By sliding a window over historical series, they construct features such as autoregressive lags and temporal covariates. A single global model is trained simultaneously on all 22 geographic time series, enabling cross-series parameter sharing and the extraction of common epidemiological patterns (such as the characteristic rise and decay morphology of epidemic waves). This pooling of data acts as a powerful regularizer, which is particularly beneficial for noisy regional series. However, these models are intrinsically deterministic and do not provide native probabilistic forecasts, requiring post-hoc calibration techniques (such as conformal prediction) to generate reliable prediction intervals.
+
+From a bias-variance trade-off perspective, global models reduce estimation variance by pooling data across series, albeit at the risk of introducing some local bias. A local model fitted solely on a low-population region, such as Valle d'Aosta, is highly sensitive to sampling noise arising from a small sentinel sample, leading to high parameter variance. By contrast, a global model pools Valle d'Aosta with highly populated, stable regions (e.g., Lombardy), regularizing parameter estimates and mitigating overfitting to local noise. Furthermore, the non-linear decision boundaries of gradient-boosted decision trees enable them to capture complex interaction effects that linear statistical models cannot represent.
+
+%-----------------------------------
+%	SUBSECTION 3.2: TIME SERIES FOUNDATION MODELS AND ZERO-SHOT TRANSFER
+%-----------------------------------
+\subsection{Time Series Foundation Models and Zero-Shot Transfer}
+Time series foundation models represent a paradigm shift in forecasting, analogous to the impact of Large Language Models (LLMs) on natural language processing. These models are pre-trained on massive, heterogeneous datasets containing billions of observations across diverse domains (e.g., finance, climatology, energy, and traffic) alongside synthetic time series. Through pre-training objectives such as next-step or patch-based autoregressive forecasting, they learn generalized representations of temporal dynamics.
+
+In this study, foundation models are evaluated strictly in a zero-shot transfer setting. The models ingest historical context and generate forecasts without any local parameter updates or fine-tuning, relying entirely on their pre-trained weights to capture the underlying dynamics. This serves as a rigorous test of their generalization capacity. From a public health operations perspective, this zero-shot paradigm is highly advantageous: it eliminates the computational cost and complexity of local model training, and avoids the parameter instability that often occurs when fitting high-capacity models on short or noisy epidemiological series.
+
+Time series foundation models exhibit scaling properties, where zero-shot generalization improves with model capacity and training data volume. During pre-training, they learn fundamental mathematical primitives (such as exponential growth, decay, and oscillatory dynamics), enabling them to adapt to the morphology of an epidemic curve using only their attention weights. Our evaluation assesses whether these pre-trained models outperform models fitted on local data under conditions of high noise and structural breaks.
+
+Theoretically, the self-attention mechanism in these models acts as a dynamic, non-parametric regression. By computing similarity weights across past segments of the input time series, the attention layers perform in-context learning, retrieving relevant temporal patterns and projecting them forward. This represents a highly flexible forecasting paradigm: the model does not assume a rigid functional form, such as a linear trend or a fixed autoregressive lag structure, allowing it to adapt dynamically to regional variations.
+
+%----------------------------------------------------------------------------------------
+%	SECTION 4: MODEL CATALOG AND FORMULATIONS
+%----------------------------------------------------------------------------------------
+
+\section{Model Catalog and Formulations}
+
+Our benchmark compares \textbf{18 models} divided into three paradigm groups. Each model is configured to output forecasts across a standardized grid of \textbf{23 quantiles}:
+\begin{equation}
+q \in \{0.01, 0.025, 0.05, 0.10, 0.15, \dots, 0.50, \dots, 0.85, 0.90, 0.95, 0.975, 0.99\}
+\end{equation}
+This format matches the CDC and Influcast reporting guidelines, conveying the epistemic uncertainty of our forecasts.
+
+%-----------------------------------
+%	SUBSECTION 4.1: CLASSIC STATISTICAL BASELINES
+%-----------------------------------
+\subsection{Classic Statistical Baselines}
+These models serve as our local baseline methods, implemented in \texttt{src/models/baselines.py}. They represent classic time series analysis, relying on statistical assumptions and independent parameter estimation for each series.
+
+\subsubsection{Naive Forecaster}
+The Naive Forecaster is the simplest baseline. It assumes that future values will be the same as the last observed value:
+\begin{equation}
+\hat{y}_{t+h\mid t} = y_t
+\end{equation}
+To construct prediction intervals, we assume the innovations are independent and identically distributed (i.i.d.) normal random variables, causing the forecast variance to scale linearly with the horizon $h$. Under this specification, the process is modeled as a random walk without drift:
+\begin{equation}
+y_{t+1} = y_t + \epsilon_t, \quad \epsilon_t \overset{\text{i.i.d.}}{\sim} \mathcal{N}(0, \sigma^2)
+\end{equation}
+Consequently, the conditional distribution of the future state $y_{t+h}$ given the history $y_{1:t}$ is:
+\begin{equation}
+y_{t+h} \mid y_{1:t} \sim \mathcal{N}(y_t, h \sigma^2)
+\end{equation}
+where the variance $\sigma^2$ is estimated from the sample variance of the historical one-step-ahead residuals.
+
+\subsubsection{Seasonal Naive}
+The Seasonal Naive (SNaive) model assumes that the epidemic curve repeats its seasonal pattern exactly. For $h \le S$, the forecast is defined as:
+\begin{equation}
+\hat{y}_{t+h\mid t} = y_{t+h-S}
+\end{equation}
+We set the seasonal period $S$ to 52 weeks. In calendar indexing, this corresponds to exactly one year. However, under epidemic indexing (where summer weeks are omitted), 52 active weeks represent approximately 1.86 seasons (based on an average active season length of 28 weeks). This shifts the seasonal lag, forcing the model to compare the current state to the corresponding period nearly two seasons prior.
+
+\subsubsection{Drift Model}
+The Drift model extends the naive model by incorporating a constant linear trend equal to the historical average rate of change. The forecast for horizon $h$ is given by:
+\begin{equation}
+\hat{y}_{t+h\mid t} = y_t + h \left( \frac{y_t - y_1}{t-1} \right)
+\end{equation}
+where the drift coefficient $\theta = (y_t - y_1)/(t-1)$ represents the average slope of the historical series.
+
+\subsubsection{Simple Moving Average}
+To distinguish this baseline from the moving average (MA) stochastic component of Box-Jenkins models, we refer to it as the Simple Moving Average (SMA) forecaster. The SMA forecaster generates predictions by computing the arithmetic mean of the most recent $L = 52$ observations:
+\begin{equation}
+\hat{y}_{t+h\mid t} = \frac{1}{L}\sum_{i=0}^{L-1} y_{t-i}
+\end{equation}
+This prediction remains constant for all forecast horizons $h$. Since classical parametric methods for constructing simple moving average prediction intervals often fail under non-stationarity, we generate prediction intervals using conformal calibration over in-sample rolling residuals, matching the configuration used for the machine learning models (with $N_{\text{windows}}=5$ and a validation horizon of $h=8$ weeks).
+
+\subsubsection{Exponential Smoothing (ETS)}
+The Exponential Smoothing (ETS) model is a state-space model that includes Error ($E$), Trend ($T$), and Seasonal ($S$) components \cite{hyndman2008forecasting}. The state is $\mathbf{x}_t = (l_t, b_t, s_t, s_{t-1}, \dots, s_{t-m+1})^\top$, where $l_t$ is the level, $b_t$ is the trend, $s_t$ is the seasonal component, and $m = 52$ represents the seasonal period. The ETS framework covers 30 different models, depending on whether each component is additive (A), multiplicative (M), or not present (N).
+
+We can write the update equations for these models. For example, the equations for the additive ETS(A,A,A) model are:
+\begin{align}
+y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
+l_t &= l_{t-1} + b_{t-1} + \alpha \epsilon_t \\
+b_t &= b_{t-1} + \beta \epsilon_t \\
+s_t &= s_{t-m} + \gamma \epsilon_t
+\end{align}
+For multiplicative errors, like in ETS(M,A,A), the measurement equation scales the error by the prediction mean:
+\begin{equation}
+y_t = (l_{t-1} + b_{t-1} + s_{t-m})(1 + \epsilon_t)
+\end{equation}
+and the state update equations are defined as:
+\begin{align}
+l_t &= l_{t-1} + b_{t-1} + \alpha (l_{t-1} + b_{t-1} + s_{t-m}) \epsilon_t \\
+b_t &= b_{t-1} + \beta (l_{t-1} + b_{t-1} + s_{t-m}) \epsilon_t \\
+s_t &= s_{t-m} + \gamma (l_{t-1} + b_{t-1} + s_{t-m}) \epsilon_t
+\end{align}
+If we use a damped trend (written as $A_d$ or $M_d$), we introduce a damping parameter $\phi \in (0, 1)$:
+\begin{align}
+y_t &= l_{t-1} + \phi b_{t-1} + s_{t-m} + \epsilon_t \\
+l_t &= l_{t-1} + \phi b_{t-1} + \alpha \epsilon_t \\
+b_t &= \phi b_{t-1} + \beta \epsilon_t \\
+s_t &= s_{t-m} + \gamma \epsilon_t
+\end{align}
+We choose the best ETS model automatically by finding the one that minimizes the Akaike Information Criterion (AIC) at each step:
+\begin{equation}
+\text{AIC} = -2\ln(\mathcal{L}) + 2k
+\end{equation}
+where $\mathcal{L}$ is the maximized likelihood of the model and $k$ is the number of parameters.
+
+\subsubsection{ARIMA}
+The Autoregressive Integrated Moving Average (ARIMA) model \cite{boxjenkins} models a potentially non-stationary series by differencing it $d$ times to obtain a stationary series, which is then projected using a linear combination of its own past values (the autoregressive component) and past forecast errors (the moving average component):
+\begin{equation}
+\phi(B)(1-B)^d y_t = \theta(B)\epsilon_t
+\end{equation}
+where $B$ is the backshift operator ($B y_t = y_{t-1}$), $\phi(B) = 1 - \phi_1 B - \dots - \phi_p B^p$ is the autoregressive polynomial of order $p$, $\theta(B) = 1 + \theta_1 B + \dots + \theta_q B^q$ is the moving average polynomial of order $q$, and $\epsilon_t$ is a zero-mean white noise process. We identify the optimal parameters $(p, d, q)$ at each step via an automated search minimizing the Akaike Information Criterion (AIC) \cite{hyndman2008automatic}, using Kwiatkowski-Phillips-Schmidt-Shin (KPSS) unit root tests to determine the integration order $d$.
+
+For the model to be stable and invertible, it must satisfy standard stationarity and invertibility conditions. The roots of the autoregressive polynomial $\phi(z) = 0$ must lie outside the unit circle in the complex plane ($|z| > 1$). This stability condition ensures that the underlying autoregressive process is stationary and causal, preventing explosive behavior (i.e., growing without bound). Similarly, the roots of the moving average polynomial $\theta(z) = 0$ must also lie outside the unit circle to guarantee invertibility. This ensures that older observations have a smaller influence on current predictions.
+
+\subsubsection{SARIMA}
+The Seasonal ARIMA (SARIMA) model incorporates seasonal dynamics into the ARIMA structure:
+\begin{equation}
+\Phi(B^S)\phi(B)(1-B)^d (1-B^S)^D y_t = \Theta(B^S)\theta(B)\epsilon_t
+\end{equation}
+where $S=52$ is the seasonal period, $\Phi(B^S) = 1 - \Phi_1 B^S - \dots - \Phi_P B^{PS}$ is the seasonal autoregressive polynomial of order $P$, $\Theta(B^S) = 1 + \Theta_1 B^S + \dots + \Theta_Q B^{QS}$ is the seasonal moving average polynomial of order $Q$, and $D$ is the seasonal differencing order. To ensure computational tractability and parameter stability across noisy regional time series, we restrict the seasonal orders to $\texttt{max\_P} = 1$, $\texttt{max\_Q} = 1$, and $\texttt{max\_D} = 1$.
+
+\subsubsection{Prophet}
+Prophet is a structural Bayesian time series model that decomposes the target series into trend, seasonality, and holiday components \cite{prophet}:
+\begin{equation}
+y(t) = g(t) + s(t) + h(t) + \epsilon(t)
+\end{equation}
+where $g(t)$ is the trend, $s(t)$ is the seasonality, $h(t)$ is the holiday effect, and $\epsilon(t)$ represents the observation error. The trend component $g(t)$ is modeled as piecewise linear growth:
+\begin{equation}
+g(t) = (k + \mathbf{a}(t)^\top \boldsymbol{\delta}) t + (m + \mathbf{a}(t)^\top \boldsymbol{\gamma})
+\end{equation}
+where $k$ is the baseline growth rate, $\boldsymbol{\delta} \in \mathbb{R}^J$ is a vector of rate adjustments at changepoints $s_1, \dots, s_J$, $m$ is the baseline intercept, the indicator vector $\mathbf{a}(t) \in \{0, 1\}^J$ is defined as $a_j(t) = \mathbb{I}(t \ge s_j)$, and $\boldsymbol{\gamma} \in \mathbb{R}^J$ is the vector of intercept adjustments whose elements are set to $\gamma_j = -s_j \delta_j$ to ensure piecewise continuity at each transition boundary. While Prophet also supports a logistic growth formulation for saturating processes:
+\begin{equation}
+g(t) = \frac{C(t)}{1 + \exp(-k(t - m))}
+\end{equation}
+where $C(t)$ represents the carrying capacity, our study employs the piecewise linear growth model, which is well-suited to the unconstrained seasonal rise and fall of ILI incidence rates.
+
+In our configuration, trend changepoints are selected automatically within the first 80\% of the series, placing a sparse Laplace prior on the rate adjustments:
+\begin{equation}
+\delta_j \sim \operatorname{Laplace}(0, \tau)
+\end{equation}
+where the regularization parameter $\tau$ (set to the default $0.05$) controls trend flexibility. The seasonal component $s(t)$ represents the annual cycle and is modeled via a Fourier series with $N=10$ terms and a period $P \approx 52.18$ weeks (corresponding to the $365.25$-day astronomical year):
+\begin{equation}
+s(t) = \sum_{n=1}^N \left( a_n \cos\left(\frac{2\pi n t}{P}\right) + b_n \sin\left(\frac{2\pi n t}{P}\right) \right)
+\end{equation}
+where $a_n$ and $b_n$ are the estimated coefficients. Holiday effects $h(t)$ are set to zero, and the error term is modeled as $\epsilon(t) \sim \mathcal{N}(0, \sigma^2)$.
+
+%-----------------------------------
+%	SUBSECTION 4.2: TABULAR MACHINE LEARNING MODELS
+%-----------------------------------
+\subsection{Tabular Machine Learning Models}
+Tabular machine learning models formulate the forecasting task as a supervised regression problem on tabular data, implemented in \texttt{src/models/ml.py}. Using a sliding-window formulation, the time series is restructured into a design matrix where features are extracted from historical lags:
+\begin{itemize}
+    \item \textbf{Autoregressive Lags:} We construct features using lags $l \in \{1, 2, 3, 4, 8, 12, 52\}$ weeks. These capture short-term temporal dependencies (lags 1--4), recent seasonal trends (lags 8--12), and the long-term seasonal dependency (lag 52).
+    \item \textbf{Temporal Exogenous Features:} These comprise calendar features for the target date, specifically the ISO week number and the month index, which capture seasonal variations. Under epidemic time-indexing, these features are extracted from the synthetic date index \texttt{ds} to maintain compatibility with the \texttt{MLForecast} pipeline. While this introduces a phase shift relative to physical calendar years (since the synthetic timeline progresses at approximately 54\% of the calendar rate), it provides a continuous, regular seasonal indicator that models can use to differentiate phases within the compressed active period.
+\end{itemize}
+
+\subsubsection{Ridge Regression}
+Ridge Regression is a regularized linear model that estimates coefficients by minimizing the sum of squared residuals subject to an $L_2$ penalty \cite{hoerl1970ridge}:
+\begin{equation}
+\hat{\boldsymbol{\beta}} = \operatorname{argmin}_{\boldsymbol{\beta}} \left( \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|_2^2 + \alpha \|\boldsymbol{\beta}\|_2^2 \right)
+\end{equation}
+where $\mathbf{y}$ is the target vector of observations, $\mathbf{X}$ is the design matrix of lagged features and covariates, $\boldsymbol{\beta}$ is the coefficient vector, and $\alpha \ge 0$ controls the regularization strength. This penalty acts as a regularizer, preventing overfitting when lagged variables exhibit high multicollinearity.
+
+\subsubsection{LightGBM}
+LightGBM is a highly efficient gradient-boosted decision tree framework that employs a leaf-wise (best-first) tree growth strategy \cite{lightgbm}, splitting the node that yields the largest loss reduction. To optimize training on large datasets, LightGBM incorporates Gradient-based One-Side Sampling (GOSS)---which retains instances with larger gradients to compute information gain---and Exclusive Feature Bundling (EFB) to bundle mutually exclusive sparse features, reducing the dimensionality of the feature space.
+
+\subsubsection{XGBoost}
+XGBoost is a scalable gradient-boosted decision tree framework that minimizes a regularized objective function \cite{xgboost}. At each boosting step $k$, the model fits a new tree $f_k$ to minimize the objective:
+\begin{equation}
+\mathcal{L}^{(k)} = \sum_{i=1}^n \ell(y_i, \hat{y}_i^{(k-1)} + f_k(\mathbf{x}_i)) + \Omega(f_k)
+\end{equation}
+where $\Omega(f_k) = \gamma T_k + \frac{1}{2}\lambda \sum_{j=1}^{T_k} w_{k, j}^2$ penalizes the complexity of the tree (with $T_k$ denoting the number of leaves in tree $f_k$, $w_{k, j}$ representing the weight of leaf $j$, and $\mathbf{x}_i$ representing the feature vector of instance $i$). XGBoost uses a second-order Taylor expansion to approximate the loss function, enabling fast and generalized optimization.
+
+\subsubsection{CatBoost}
+CatBoost is a gradient boosting framework that utilizes oblivious (symmetric) decision trees as base predictors \cite{catboost}. Oblivious trees apply the same splitting criterion across all nodes at a given depth, resulting in balanced structures that are highly optimized for execution on hardware accelerators. To prevent target leakage and prediction shift, CatBoost implements \textbf{ordered boosting}, a permutation-based approach that computes unbiased gradient estimates by training models on sequential prefixes of the data.
+
+\subsubsection{Probabilistic Calibration via Conformal Prediction}
+Tabular machine learning models are inherently deterministic and do not natively output probabilistic forecasts. To address this, we implement a rolling-window variant of \textbf{Split Conformal Prediction} (conceptually derived from Ensemble Batch Prediction Intervals, EnbPI \cite{xu2021conformal}) via the \texttt{MLForecast} \texttt{PredictionIntervals} module, configured with $N_{\text{windows}}=5$ and a validation horizon of $h=8$ weeks. Conformal prediction provides distribution-free, mathematically rigorous coverage guarantees under mild assumptions.
+
+Formally, the historical data is partitioned into training and calibration subsets. The model is fitted on the training set to obtain predictions, and the absolute residuals are computed on the calibration set:
+\begin{equation}
+e_{t} = |y_t - \hat{y}_t|
+\end{equation}
+Under the assumption of exchangeability, a valid $1 - \alpha$ prediction interval is constructed by finding the $(1 - \alpha)(1 + 1/N_{\text{windows}})$-th empirical quantile of these residuals, where $N_{\text{windows}}$ represents the size of the calibration set. In a time series setting, temporal dependencies violate the standard exchangeability assumption. To mitigate this, our rolling conformal calibration constructs the calibration set by evaluating the model over $N_{\text{windows}}$ rolling validation windows.
+
+The calibration procedure is structured as follows:
+\begin{enumerate}
+    \item The training history is partitioned into $N_{\text{windows}}=5$ rolling validation folds.
+    \item For each fold $i \in \{1, \dots, N_{\text{windows}}\}$, the model is trained on the data preceding the fold origin $T_i$ and evaluated on a validation window of length $h=8$ to obtain the absolute multi-step forecast errors:
+    \begin{equation}
+    e_{i, j} = |y_{T_i + j} - \hat{y}_{T_i + j \mid T_i}|
+    \end{equation}
+    where $\hat{y}_{T_i + j \mid T_i}$ denotes the $j$-step-ahead forecast generated from origin $T_i$.
+    \item For each forecast horizon $j \in \{1, \dots, h\}$, the errors across all folds are aggregated into a horizon-specific calibration set:
+    \begin{equation}
+    \mathcal{E}_j = \{e_{1, j}, e_{2, j}, \dots, e_{N_{\text{windows}}, j}\}
+    \end{equation}
+    \item For a target significance level $\alpha \in (0, 1)$, we compute the empirical quantile $Q_{1-\alpha}(\mathcal{E}_j)$ as the $\lceil (1-\alpha)(|\mathcal{E}_j|+1) \rceil$-th smallest value in $\mathcal{E}_j$. If the computed index $\lceil (1-\alpha)(|\mathcal{E}_j|+1) \rceil$ exceeds the cardinality $|\mathcal{E}_j|$, we fall back to the maximum error in $\mathcal{E}_j$. This adjustment is the standard procedure for small calibration sets to guarantee conservative coverage.
+    \item The resulting prediction interval for horizon $j$ around the point forecast $\hat{y}_{T+j \mid T}$ is defined as:
+    \begin{equation}
+    [\hat{y}_{T+j \mid T} - Q_{1-\alpha}(\mathcal{E}_j), \quad \hat{y}_{T+j \mid T} + Q_{1-\alpha}(\mathcal{E}_j)]
+    \end{equation}
+\end{enumerate}
+We repeat this conformal calibration step for all required significance levels $\alpha$.
+
+%-----------------------------------
+\subsection{Time Series Foundation Models (Zero-Shot)}
+These foundation models are evaluated strictly in a zero-shot setting. They ingest historical observations and generate multi-step forecasts without any local parameter updates or fine-tuning, relying entirely on the temporal patterns learned during pre-training.
+
+\subsubsection{Chronos}
+Chronos is a family of pre-trained time series models (based on the T5 architecture) that reformulate forecasting as a language modeling classification task \cite{chronos}. The model maps real-valued time series into discrete tokens. First, the input sequence is scaled by its mean absolute value:
+\begin{equation}
+\tilde{y}_t = \frac{y_t}{s} \quad \text{where } s = \frac{1}{T}\sum_{i=1}^T |y_i|
+\end{equation}
+where $s$ denotes the mean absolute scale of the context window of length $T$. These scaled values are subsequently quantized into $C = 4096$ bins (tokens). Specifically, 4094 bins partition the real line, while the remaining two tokens are reserved as special tokens (\texttt{PAD} and \texttt{EOS}) for sequence formatting. The model is optimized using cross-entropy loss to predict the probability distribution of the next token:
+\begin{equation}
+\mathcal{L} = -\sum_{i} \log P(\text{token}_{i} \mid \text{token}_{<i})
+\end{equation}
+Forecasts are generated by autoregressively sampling from the predicted token distribution and mapping the sampled tokens back to the continuous scale. We evaluate three variants: \textbf{Chronos-Small} (46M parameters, based on T5-Small, identifier \texttt{amazon/chronos-t5-small}), \textbf{Chronos-V2} (an updated version trained on larger datasets, identifier \texttt{amazon/chronos-2}), and \textbf{Chronos-Bolt-Small} (a faster version using a lightweight causal decoder, identifier \texttt{amazon/chronos-bolt-small}).
+
+The pre-training corpus for Chronos comprises a diverse collection of public datasets---such as the Monash Time Series Archive, audio features, synthetic data, and web-scraped series. By formulating forecasting as a classification task over a discrete vocabulary, Chronos avoids making explicit parametric assumptions about the underlying data distribution. The model outputs a probability distribution over the 4,096 tokens for the next step. To forecast across multiple steps ($h > 1$), Chronos operates autoregressively: it samples a token, de-quantizes it to its continuous value, appends it to the history, and predicts the subsequent step. This process is repeated for $N_{\text{samples}}=1000$ independent trajectories to construct the empirical forecast distribution.
+
+\subsubsection{TimesFM}
+TimesFM is a decoder-only transformer model (200M parameters) developed by Google \cite{timesfm}. While Chronos works value-by-value, TimesFM works on \textbf{patches} (groups of values). The input series is split into non-overlapping patches of length $P_{\text{in}}$ (usually 32):
+\begin{equation}
+\mathbf{x}_i = [y_{(i-1)P_{\text{in}} + 1}, \dots, y_{i P_{\text{in}}}]^\top \in \mathbb{R}^{P_{\text{in}}}
+\end{equation}
+Each patch is projected into a hidden dimension $D$ and added to positional encodings:
+\begin{equation}
+\mathbf{e}_i = \mathbf{W}_{\text{proj}} \mathbf{x}_i + \mathbf{e}_{\text{pos}, i} \in \mathbb{R}^D
+\end{equation}
+A transformer decoder processes these patch representations to compute the hidden state for the next step:
+\begin{equation}
+\mathbf{z}_i = \text{Decoder}(\mathbf{e}_1, \dots, \mathbf{e}_i)
+\end{equation}
+This hidden state is then projected back to the continuous space to output a forecast patch of length $P_{\text{out}}$:
+\begin{equation}
+\hat{\mathbf{x}}_{i+1} = \mathbf{W}_{\text{out}} \mathbf{z}_i \in \mathbb{R}^{P_{\text{out}}}
+\end{equation}
+This patch-based formulation captures local temporal patterns within a single representation, reduces the effective sequence length, and improves long-term forecasting stability. Model identifier: \texttt{google/timesfm-2.5-200m-pytorch}.
+
+TimesFM was pre-trained on a large corpus comprising over 100 billion observations from Google Trends, Wikipedia pageviews, smart grid meters, weather sensors, retail sales, and synthetic series. The primary architectural feature of TimesFM is its patch size of 32. In point-based models, the sequence length grows linearly with the history, leading to high computational complexity due to the quadratic scaling of attention mechanisms. By grouping observations into patches of size 32, TimesFM reduces the sequence length by a factor of 32, enabling the processing of long context windows. The input projection layer serves as a local feature extractor, while the output layer maps the decoder's hidden state to a forecast vector of length $P_{\text{out}}$ (set to 8 in our setup), enabling the model to generate the entire $8$-week forecast horizon in a single forward pass.
+
+\subsubsection{TiRex}
+TiRex is an xLSTM-based foundation model developed by NX-AI \cite{auer2025tirex}. It replaces standard self-attention mechanisms with recurrent xLSTM layers \cite{xlstm}. The xLSTM architecture incorporates exponential gating and a normalizer state to address the vanishing and exploding gradient limitations of standard LSTMs while allowing for parallelized training. For the scalar LSTM (sLSTM) block, the state updates are defined as:
+\begin{align}
+\mathbf{f}_t &= e^{\tilde{\mathbf{f}}_t}, \quad \mathbf{i}_t = e^{\tilde{\mathbf{i}}_t}, \quad \mathbf{o}_t = \sigma(\tilde{\mathbf{o}}_t) \\
+\mathbf{c}_t &= \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \mathbf{z}_t \\
+\mathbf{n}_t &= \mathbf{f}_t \odot \mathbf{n}_{t-1} + \mathbf{i}_t \\
+\mathbf{h}_t &= \mathbf{o}_t \odot \frac{\mathbf{c}_t}{\mathbf{n}_t}
+\end{align}
+where $\tilde{\mathbf{f}}_t$, $\tilde{\mathbf{i}}_t$, and $\tilde{\mathbf{o}}_t$ represent pre-activation gate vectors, $\mathbf{z}_t = \tanh(\tilde{\mathbf{z}}_t)$ is the cell input projection vector, $\mathbf{c}_t$ is the cell state vector, $\mathbf{n}_t$ is the normalizer state vector, and $\mathbf{h}_t$ represents the hidden state vector. 
+
+TiRex also utilizes matrix LSTM (mLSTM) blocks, which implement a matrix memory $\mathbf{C}_t \in \mathbb{R}^{d \times d}$ and a key-value retrieval mechanism. This structure permits parallelized training (analogous to transformers) while maintaining a linear memory footprint $\mathcal{O}(L)$ relative to the sequence length $L$. For the mLSTM block, the updates are:
+\begin{align}
+f_t &= e^{\tilde{f}_t}, \quad i_t = e^{\tilde{i}_t}, \quad \mathbf{o}_t = \sigma(\tilde{\mathbf{o}}_t) \\
+\mathbf{k}_t &= \mathbf{W}_k \mathbf{x}_t, \quad \mathbf{v}_t = \mathbf{W}_v \mathbf{x}_t \\
+\mathbf{q}_t &= \mathbf{W}_q \mathbf{x}_t \\
+\mathbf{C}_t &= f_t \mathbf{C}_{t-1} + i_t \mathbf{v}_t \mathbf{k}_t^\top \\
+\mathbf{n}_t &= f_t \mathbf{n}_{t-1} + i_t \mathbf{k}_t \\
+\mathbf{h}_t &= \mathbf{o}_t \odot \frac{\mathbf{C}_t \mathbf{q}_t}{\max\left(\left|\mathbf{n}_t^\top \mathbf{q}_t\right|, 1\right)}
+\end{align}
+where the forget and input gates $f_t, i_t \in \mathbb{R}$ are scalar gates, $\mathbf{o}_t \in \mathbb{R}^d$ is the output gate vector, $\mathbf{k}_t, \mathbf{v}_t, \mathbf{q}_t \in \mathbb{R}^d$ represent the key, value, and query vectors, and $\mathbf{W}_k, \mathbf{W}_v, \mathbf{W}_q \in \mathbb{R}^{d \times d_{\text{in}}}$ are projection matrices. The inner product $\mathbf{n}_t^\top \mathbf{q}_t$ in the denominator is a scalar, and the term $\max\left(\left|\mathbf{n}_t^\top \mathbf{q}_t\right|, 1\right)$ acts as a numerical stabilizer for memory retrieval. Element-wise multiplication is denoted by $\odot$. Model identifier: \texttt{NX-AI/TiRex}.
+
+TiRex is pre-trained on NX-AI's corpus of millions of time series spanning physical, financial, and synthetic domains. The exponential gating in the sLSTM blocks allows the model to dynamically update and revise its memory, enabling it to overwrite outdated historical information when a structural break occurs. In the mLSTM blocks, the matrix memory ($\mathbf{C}_t$) serves as an associative storage where keys ($\mathbf{k}_t$) and values ($\mathbf{v}_t$) are stored and subsequently retrieved via query vectors ($\mathbf{q}_t$). This mechanism allows TiRex to recall specific temporal patterns and perform in-context learning similar to transformers, while maintaining linear memory complexity during inference.
+
+\subsubsection{TimeGPT}
+TimeGPT is a proprietary, closed-source time series foundation model developed by Nixtla and accessed via a web API \cite{timegpt}. The model is based on a transformer architecture trained on over 100 billion historical observations across finance, climatology, energy, and medicine. TimeGPT ingests the historical series, automatically manages normalization and frequency detection, and generates forecasts along with estimated prediction intervals.
+
+%-----------------------------------
+%	SUBSECTION 4.4: PROBABILISTIC QUANTILE GENERATION \& ALIGNMENT
+%-----------------------------------
+\subsection{Probabilistic Quantile Generation \& Alignment}
+A major challenge when comparing foundation models is aligning their probability outputs. This study needs 23 standardized quantiles, but different models output their predictions in different ways:
+\begin{itemize}
+    \item \textbf{Sampling-based Trajectories (Chronos-Small):} The baseline Chronos-Small model generates forecasts by sampling from its predicted token probability distribution. We configure the model to draw $N_{\text{samples}}=1000$ independent trajectories of length $h$. The 23 standardized quantiles are subsequently computed from these empirical samples at each step:
+    \begin{equation}
+    \hat{y}_{t+h\mid t}^{(q)} = \operatorname{Percentile}\left(\{\hat{y}_{t+h\mid t}^{(s)}\}_{s=1}^{1000}, q\right)
+    \end{equation}
+    where $\operatorname{Percentile}$ represents the empirical percentile function.
+    
+    \item \textbf{Decile Interpolation with Linear Extrapolation (Chronos-V2 and Chronos-Bolt-Small):} In contrast to Chronos-Small, both Chronos-V2 and Chronos-Bolt-Small natively output predictions at a fixed set of 9 nominal deciles:
+    \begin{equation}
+    D_{\text{native}} = \{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9\}
+    \end{equation}
+    To align these predictions with our 23-quantile target grid, the pipeline performs linear interpolation. For extreme quantiles outside the native interval ($q < 0.1$ or $q > 0.9$), we apply linear extrapolation (implemented via \texttt{scipy.interpolate.interp1d} with the \texttt{fill\_value='extrapolate'} parameter). This approach allows the outer prediction bounds to expand dynamically based on the local slope of the boundary deciles. We apply a non-negativity constraint via clipping ($\max(0, \cdot)$) to prevent physically impossible negative incidence rates.
+
+    \item \textbf{Decile Interpolation with Flat Extrapolation (TimesFM and TiRex):} Both TimesFM and TiRex also output predictions at the 9 nominal deciles defined in $D_{\text{native}}$. We map these predictions to our 23-quantile grid using linear interpolation:
+    \begin{equation}
+    \hat{y}_{t+h\mid t}^{(q)} = \hat{y}_{t+h\mid t}^{(d_i)} + \frac{q - d_i}{d_{i+1} - d_i} \left( \hat{y}_{t+h\mid t}^{(d_{i+1})} - \hat{y}_{t+h\mid t}^{(d_i)} \right)
+    \end{equation}
+    where $d_i$ and $d_{i+1}$ are consecutive deciles in $D_{\text{native}}$ enclosing the target quantile $q$ ($d_i \le q < d_{i+1}$). For the median ($q=0.5$), the models' mean predictions are used directly.
+
+    However, the interpolation function for these models (using \texttt{numpy.interp}) performs flat extrapolation outside the native grid boundaries. For any quantile $q < 0.1$, the value is set to the 10th percentile, and for any $q > 0.9$, the value is set to the 90th percentile:
+    \begin{equation}
+    \hat{y}_{t+h\mid t}^{(q)} = \begin{cases}
+    \hat{y}_{t+h\mid t}^{(0.1)} & \text{for } q < 0.1 \\
+    \hat{y}_{t+h\mid t}^{(0.9)} & \text{for } q > 0.9
+    \end{cases}
+    \end{equation}
+    This flat extrapolation artificially contracts the nominal 95\% prediction interval $[q=0.025, q=0.975]$ to the native 80\% interval $[q=0.1, q=0.9]$, capping the maximum empirical coverage at 80\% and creating a prominent overconfidence artifact that is analyzed in detail in Chapter 3.
+\end{itemize}
+
+%----------------------------------------------------------------------------------------
+%	SECTION 5: EXPERIMENTAL DESIGN AND BACKTESTING FRAMEWORK
+%----------------------------------------------------------------------------------------
+
+\section{Experimental Design and Backtesting Framework}
+
+To simulate real-time forecasting, we implement a \textbf{rolling-origin backtest} (implemented in \texttt{src/evaluation/backtest.py}). Rolling-origin backtesting (often referred to as walk-forward validation) represents the gold standard for evaluating forecasting models. It strictly respects the chronological order of the data and yields a large sample of forecast points across various phases of the epidemic cycle.
+
+In this configuration, the backtest is initialized with a minimum training history. At each step, models are fit on all observations available up to the current origin. Subsequently, multi-step-ahead forecasts are generated, and the origin is incremented forward by a fixed step size. This process is repeated iteratively until the end of the evaluation period.
+
+%-----------------------------------
+%	SUBSECTION 5.1: CONFIGURATION PARAMETERS
+%-----------------------------------
+\subsection{Configuration Parameters}
+The backtesting configuration parameters are defined as follows:
+\begin{itemize}
+    \item \textbf{Minimum Training History ($M_{\text{min}}$):} Set to \textbf{156 weeks}. Under calendar indexing, this represents exactly 3 full years (3 seasons). Under epidemic indexing (where summer weeks are removed), 156 active weeks corresponds to approximately 5.6 seasons (given an average season length of 28 weeks). This ensures that all models have a substantial training history to learn baseline trends and seasonal patterns.
+    \item \textbf{Step Size ($S_{\text{step}}$):} The temporal increment between consecutive forecast origins.
+    \begin{itemize}
+        \item \textit{National Benchmark:} $S_{\text{step}} = 4$ weeks.
+        \item \textit{Regional Benchmark:} $S_{\text{step}} = 8$ weeks (longer step size to manage computational requirements).
+    \end{itemize}
+    \item \textbf{Forecast Horizons ($h$):} Forecasts are evaluated at lead times $h \in \{1, 2, 4, 8\}$ weeks ahead.
+\end{itemize}
+
+%-----------------------------------
+%	SUBSECTION 5.2: EVALUATION TIMELINES AND ROLLING ORIGINS
+%-----------------------------------
+\subsection{Evaluation Timelines and Rolling Origins}
+We execute the rolling-origin backtest across two benchmarks with distinct timelines and geographic granularities:
+\begin{itemize}
+    \item \textbf{National Benchmark:} Covers a 12-year period from the 2003--2004 season to the 2014--2015 season. Combined with epidemic time-indexing and a 4-week step size, this yields a total of \textbf{113 forecast origins}.
+    \item \textbf{Regional Benchmark:} Covers a 6-year period from the 2012--2013 season to the 2017--2018 season for all 21 subnational divisions. Since the first 156 weeks are reserved for the initial training history, the evaluation period begins in 2015. Under an 8-week step size, this yields up to \textbf{23 forecast origins per region} (varying slightly due to regional data completeness), representing a total of \textbf{472 evaluated regional origins} in aggregate.
+\end{itemize}
+This configuration provides a substantial sample size of forecast trajectories, ensuring the statistical significance of our accuracy and calibration comparisons.
+
+%-----------------------------------
+%	SUBSECTION 5.3: TEMPORAL SPLITTING AND INFORMATION LEAKAGE PREVENTION
+%-----------------------------------
+\subsection{Temporal Splitting and Information Leakage Prevention}
+At each forecast origin $T_{\text{origin}}$, the dataset is strictly partitioned. All observations beyond $T_{\text{origin}}$ are masked, ensuring that no future information is accessible during training or inference.
+
+Specifically, statistical and machine learning models are fitted exclusively on historical data $y_{t \le T_{\text{origin}}}$. Similarly, zero-shot foundation models only receive the history $y_{t \le T_{\text{origin}}}$ as their context window. Forecasts are then generated for horizons $T_{\text{origin}} + 1$ through $T_{\text{origin}} + 8$, simulating a true real-time deployment.
+
+This temporal split is enforced in the codebase by verifying training and validation indices, programmatically blocking access to future data. This is particularly critical for models like Prophet, which can incorporate future regressor variables if improperly configured. In our implementation, Prophet is strictly restricted to historical context, preventing any look-ahead bias.
+
+%-----------------------------------
+%	SUBSECTION 5.4: HYPERPARAMETER OPTIMIZATION (BAYESIAN TUNING)
+%-----------------------------------
+\subsection{Hyperparameter Optimization (Bayesian Tuning)}
+For tabular machine learning models (Ridge Regression, LightGBM, XGBoost, and CatBoost), default parameters are often suboptimal due to the unique scale and noise characteristics of epidemic data. We implement automated hyperparameter optimization using the \textbf{Optuna} library.
+
+Hyperparameters are optimized dynamically at each step of the rolling backtest:
+\begin{enumerate}
+    \item \textbf{Validation Split:} The historical data $y_{t \le T_{\text{origin}}}$ is split into a training subset (all observations up to $T_{\text{origin}} - 8$) and a validation subset (the final 8 weeks of the history).
+    \item \textbf{Objective Function:} We evaluate parameter configurations by training the model on the training subset, forecasting $h=8$ weeks ahead, and computing the validation Root Mean Squared Error (RMSE):
+    \begin{equation}
+    \text{RMSE}_{\text{val}} = \sqrt{\frac{1}{8}\sum_{i=1}^8 (y_{\text{val}, i} - \hat{y}_{\text{val}, i})^2}
+    \end{equation}
+    The optimization objective is to minimize this validation error.
+    \item \textbf{Optimization Strategy:} Optuna conducts $N=20$ trials per step using the \textbf{Tree-structured Parzen Estimator (TPE)} algorithm. TPE is a Bayesian optimization method that models the probability density of the hyperparameters given the validation performance:
+    \begin{equation}
+    p(x \mid y) = \begin{cases} 
+    l(x) & \text{if } y < y^* \\
+    g(x) & \text{if } y \ge y^*
+    \end{cases}
+    \end{equation}
+    where $y^*$ is a quantile threshold (set to the 15th percentile of the validation RMSE scores). Here, $l(x)$ represents the distribution of parameters yielding errors below $y^*$, and $g(x)$ represents the distribution for worse-performing parameters.
+    
+    The next hyperparameter proposal $x$ is selected by maximizing the Expected Improvement (EI):
+    \begin{equation}
+    \operatorname{EI}(x) = \int_{-\infty}^{y^*} (y^* - y) p(y \mid x) dy
+    \end{equation}
+    Using Bayes' rule, the conditional density can be written as $p(y \mid x) = p(x \mid y) p(y) / p(x)$. Defining $\gamma = P(y < y^*)$, the marginal density of $x$ is $p(x) = \gamma l(x) + (1 - \gamma) g(x)$. The Expected Improvement equation simplifies to:
+    \begin{equation}
+    \operatorname{EI}(x) \propto \frac{l(x)}{\gamma l(x) + (1-\gamma)g(x)} = \left( \gamma + (1-\gamma)\frac{g(x)}{l(x)} \right)^{-1}
+    \end{equation}
+    Consequently, maximizing EI is equivalent to maximizing the ratio $l(x)/g(x)$. This optimization focuses search efforts on parameter spaces with a high likelihood of belonging to the top-performing group relative to the underperforming group.
+    
+    \item \textbf{Search Spaces:} The hyperparameter tuning ranges for each model are:
+    \begin{itemize}
+        \item \textit{Ridge Regression:} We tune the regularization parameter $\alpha$ on a logarithmic scale within $[0.001, 100.0]$.
+        \item \textit{LightGBM:} We tune the learning rate $\eta \in [0.01, 0.3]$ (logarithmic scale), the number of estimators $N_{\text{est}} \in [50, 500]$, the number of leaves $N_{\text{leaves}} \in [20, 150]$, the maximum tree depth $d_{\text{max}} \in [3, 12]$, the subsampling rate $r_{\text{sub}} \in [0.5, 1.0]$, and the column feature sampling rate $r_{\text{col}} \in [0.5, 1.0]$.
+        \item \textit{XGBoost:} We tune the learning rate $\eta \in [0.01, 0.3]$ (logarithmic scale), the number of estimators $N_{\text{est}} \in [50, 500]$, the maximum tree depth $d_{\text{max}} \in [3, 12]$, the minimum child weight $w_{\text{min}} \in [1, 10]$, the subsampling rate $r_{\text{sub}} \in [0.5, 1.0]$, and the column feature sampling rate $r_{\text{col}} \in [0.5, 1.0]$.
+        \item \textit{CatBoost:} We tune the learning rate $\eta \in [0.01, 0.3]$ (logarithmic scale), the number of iterations $N_{\text{iter}} \in [50, 500]$, the tree depth $d \in [3, 10]$, the $L_2$ regularization strength $\lambda \in [1.0, 10.0]$, and the bagging temperature $T_{\text{bag}} \in [0.0, 1.0]$.
+    \end{itemize}
+\end{enumerate}
+
+%-----------------------------------
+%	SUBSECTION 5.5: COMPUTATIONAL EXECUTION \& RESOURCE MANAGEMENT
+%-----------------------------------
+\subsection{Computational Execution \& Resource Management}
+Deep learning models (Chronos, TimesFM, and TiRex) exhibit significant memory and compute requirements. To prevent Out-of-Memory (OOM) errors and ensure operational stability, the pipeline implements a robust resource management framework:
+\begin{enumerate}
+    \item \textbf{Hardware Acceleration:} The pipeline dynamically detects and utilizes the optimal hardware backend: NVIDIA CUDA GPU (utilizing \texttt{float16} precision to optimize VRAM utilization), Apple Silicon Metal Performance Shaders (MPS), or fallback CPU execution.
+    \item \textbf{Sequential Deep Learning Inference:} To prevent memory exhaustion on standard workstations or cloud instances (e.g., Google Colab, Kaggle), deep learning models are executed sequentially ($\text{n\_jobs}=1$). This avoids the duplicate memory overhead associated with parallel process spawning. However, to optimize execution speeds, models supporting batched inference (Chronos, TimesFM, and TiRex via \texttt{predict\_batch}) process all backtest origins in a single batch on the GPU/MPS accelerator.
+    \item \textbf{Parallel Baseline Execution:} For computationally lightweight baseline and statistical models where memory is not a bottleneck, we employ \texttt{joblib} to parallelize execution across multiple CPU cores. This includes regional benchmarks and Prophet model fitting. Statistical baseline models (ARIMA, ETS, Naive) also leverage fast vectorized operations provided by the \texttt{StatsForecast} library.
+    \item \textbf{Memory Reclamation:} Between model evaluations, the pipeline explicitly invokes Python's garbage collector (\texttt{gc.collect()}) and flushes the deep learning cache (\texttt{torch.cuda.empty\_cache()} or \texttt{torch.mps.empty\_cache()}) to release system RAM and VRAM.
+    \item \textbf{Fault Tolerance:} To ensure pipeline resilience against localized failures (e.g., missing API tokens like Nixtla's \texttt{TIMEGPT\_TOKEN} or memory exhaustion), each model evaluation is wrapped in a try-except block. Failed models are logged in the \texttt{failed\_models} list within \texttt{run\_info.json} and recorded in \texttt{RUN\_REPORT.md}, allowing the benchmark to proceed to completion.
+    \item \textbf{Interactive Environment:} The entire workflow is consolidated within a single Jupyter Notebook (\texttt{notebook.ipynb}) to facilitate rapid prototyping and visualization, optimized for execution on cloud computing platforms.
+    \item \textbf{Software Stack and Reproducibility:} The pipeline is built on Python 3.11, utilizing PyTorch for deep learning models, \texttt{StatsForecast} for statistical baselines, \texttt{MLForecast} for tabular machine learning, and \texttt{Optuna} for Bayesian tuning. All package requirements are specified in \texttt{requirements.txt} to guarantee reproducibility.
+    \item \textbf{Standardized Outputs:} Backtest predictions and evaluation summaries are exported to standardized directories (stored in \texttt{backtest\_predictions.csv}, \texttt{backtest\_metrics\_by\_origin.csv}, and \texttt{backtest\_summary.csv} under \texttt{results/national/} and \texttt{results/regional/}), along with run configuration logs in \texttt{run\_info.json} and the summary document \texttt{RUN\_REPORT.md}.
+\end{enumerate}
+
+%----------------------------------------------------------------------------------------
+%	SECTION 6: EVALUATION METRICS
+%----------------------------------------------------------------------------------------
+
+\section{Evaluation Metrics}
+
+We evaluate forecasting performance across point accuracy, probability calibration, and peak timing. We selected these metrics to assess both mathematical accuracy and operational utility for public health decision-making.
+
+%-----------------------------------
+%	SUBSECTION 6.1: POINT ACCURACY METRICS
+%-----------------------------------
+\subsection{Point Accuracy Metrics}
+Point forecasting performance is evaluated using the median forecast ($\hat{y}_t$, corresponding to quantile $q=0.5$) relative to the observed incidence $y_t$. We evaluate four point metrics:
+
+\subsubsection{Mean Absolute Error (MAE)}
+The Mean Absolute Error measures the average magnitude of absolute deviations between the observed and predicted values, providing an easily interpretable, outlier-robust scale-dependent metric:
+\begin{equation}
+\text{MAE} = \frac{1}{N}\sum_{t=1}^N |y_t - \hat{y}_t|
+\end{equation}
+
+\subsubsection{Root Mean Squared Error (RMSE)}
+The Root Mean Squared Error penalizes larger errors more severely due to the quadratic term, representing the Euclidean distance ($L_2$ norm) of the forecast errors:
+\begin{equation}
+\text{RMSE} = \sqrt{\frac{1}{N}\sum_{t=1}^N (y_t - \hat{y}_t)^2}
+\end{equation}
+
+\subsubsection{Symmetric Mean Absolute Percentage Error (sMAPE)}
+The Symmetric Mean Absolute Percentage Error calculates the percentage deviation relative to the average of the observed and predicted values, offering a scale-free metric for comparisons across regions. Its values range between 0\% and 200\%:
+\begin{equation}
+\text{sMAPE} = \frac{100\%}{N}\sum_{t=1}^N \frac{|y_t - \hat{y}_t|}{(|y_t| + |\hat{y}_t|)/2}
+\end{equation}
+To avoid division by zero, the metric is evaluated only when the denominator $(|y_t| + |\hat{y}_t|)/2 > 0$.
+
+While sMAPE is widely used in forecasting benchmarks to avoid the division-by-zero instabilities of standard MAPE, it exhibits a well-documented mathematical asymmetry. Specifically, the metric penalizes underprediction more severely than overprediction. For instance, given an observed value $y_t = 100$, an underprediction of 50 units ($\hat{y}_t = 50$, underpredicting by half) yields:
+\begin{equation}
+\text{sMAPE}_{\text{under}} = 100\% \times \frac{|100 - 50|}{(100 + 50)/2} \approx 66.7\%
+\end{equation}
+Conversely, an overprediction of 50 units ($\hat{y}_t = 150$, overpredicting by half) yields:
+\begin{equation}
+\text{sMAPE}_{\text{over}} = 100\% \times \frac{|100 - 150|}{(100 + 150)/2} = 40.0\%
+\end{equation}
+Consequently, evaluation under sMAPE implicitly penalizes underprediction more heavily. This asymmetry must be considered when analyzing model performances in Chapter 3.
+
+\subsubsection{Mean Absolute Scaled Error (MASE)}
+The Mean Absolute Scaled Error scales the MAE using the mean absolute error of a one-step-ahead in-sample seasonal naive model. It is a scale-free metric; a value of MASE $<1.0$ indicates that the forecasting model outperforms the seasonal naive baseline on average:
+\begin{equation}
+\text{MASE} = \frac{\text{MAE}}{\frac{1}{M-S}\sum_{i=S+1}^M |y_i - y_{i-S}|}
+\end{equation}
+where $M$ denotes the size of the training set and $S=52$ represents the seasonal period (corresponding to one year under calendar indexing, or approximately 1.86 seasons under epidemic indexing). If the training history is shorter than 52 weeks (e.g., in early backtest folds), the scaling denominator falls back to the non-seasonal naive error:
+\begin{equation}
+\text{Scale}_{\text{fallback}} = \frac{1}{M-1}\sum_{i=2}^M |y_i - y_{i-1}|
+\end{equation}
+If the fallback denominator is zero or undefined (e.g., in constant sequences), the scale is set to $1.0$ to prevent numerical errors.
+
+%-----------------------------------
+%	SUBSECTION 6.2: PROBABILISTIC CALIBRATION METRICS
+%-----------------------------------
+\subsection{Probabilistic Calibration Metrics}
+We evaluate probabilistic forecasting performance across all 23 target quantiles to verify whether the prediction intervals represent mathematically valid probability boundaries.
+
+\subsubsection{Weighted Interval Score (WIS)}
+The Weighted Interval Score (WIS) is a proper scoring rule that assesses the entire predicted probability distribution \cite{bracher2021evaluating}. It weights interval scores across $K=11$ symmetric central prediction intervals and incorporates the median forecast error:
+\begin{equation}
+\text{WIS}(y, F) = \frac{1}{K+0.5} \left( 0.5|y - m| + \sum_{k=1}^K \frac{\alpha_k}{2} \text{IS}_{\alpha_k}(y) \right)
+\end{equation}
+where $m$ is the median forecast, $\alpha_k$ represents the nominal significance level of the $k$-th interval, and the interval score $\text{IS}_{\alpha_k}(y)$ is defined as:
+\begin{equation}
+\text{IS}_\alpha(y) = (u - l) + \frac{2}{\alpha}(l - y)\mathbb{I}(y < l) + \frac{2}{\alpha}(y - u)\mathbb{I}(y > u)
+\end{equation}
+In this formulation, $l$ and $u$ denote the lower and upper bounds of the interval at significance level $\alpha$. The 23 target quantiles form $K=11$ symmetric central intervals at significance levels $\alpha_k \in \{0.02, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90\}$. The three terms in $\text{IS}_{\alpha}(y)$ penalize the interval width (representing sharpness), underprediction (when the observed value $y < l$), and overprediction (when $y > u$).
+
+A scoring rule is proper if its expected value is minimized when the forecast distribution matches the true data-generating process. Under the specified weighting scheme, the WIS serves as a discrete approximation of the Continuous Ranked Probability Score (CRPS). The continuous CRPS for a cumulative distribution function $F$ and an observation $y$ can be formulated as:
+\begin{equation}
+\text{CRPS}(F, y) = \int_0^1 2 \text{PL}_q(y, F^{-1}(q)) dq
+\end{equation}
+where $\text{PL}_q(y, \hat{q})$ represents the pinball loss for quantile $q$ at predicted value $\hat{q} = F^{-1}(q)$. By approximating this integral via a Riemann sum over $2K+1$ discrete quantiles (consisting of $K$ symmetric intervals and the median), we obtain the following equivalence:
+\begin{equation}
+\text{CRPS}(F, y) \approx \frac{1}{K+0.5} \sum_{i=1}^{2K+1} \text{PL}_{q_i}(y, \hat{q}_i) = \text{WIS}(y, F)
+\end{equation}
+where the quantiles $q_i$ are symmetric about the median. Under this formulation, the WIS is mathematically equivalent to the sum of the pinball losses divided by $K+0.5$, directly linking quantile accuracy to probability calibration.
+
+\subsubsection{Pinball Loss}
+The Pinball Loss evaluates the accuracy of individual quantile predictions. For a given quantile $q \in (0, 1)$ and predicted value $\hat{q}$, the loss function penalizes underpredictions by a weight of $q$ and overpredictions by a weight of $(1-q)$:
+\begin{equation}
+\text{PL}_q(y, \hat{q}) = \max(q(y - \hat{q}), (q - 1)(y - \hat{q}))
+\end{equation}
+This asymmetric penalty structure encourages the forecaster to output the true conditional quantile.
+
+\subsubsection{Coverage Distance}
+The Coverage Distance evaluates whether the empirical coverage of the nominal 95\% prediction interval aligns with its theoretical target:
+\begin{equation}
+\text{CovDist}_{95} = |\text{Empirical Coverage} - 0.95|
+\end{equation}
+where empirical coverage is the proportion of observed values falling within the predicted 95\% interval. In probabilistic forecasting, high empirical coverage can be trivially achieved by generating arbitrarily wide intervals (sacrificing sharpness). Therefore, the objective is to minimize this absolute distance, ensuring well-calibrated prediction intervals.
+
+%-----------------------------------
+%	SUBSECTION 6.3: METRICS VERIFICATION AND VALIDATION
+%-----------------------------------
+\subsection{Metrics Verification and Validation}
+To ensure mathematical correctness, we developed an independent verification script (\texttt{verify\_sarima.py}). This utility executes independent evaluations on the SARIMA forecasts against the historical data. By cross-referencing these independent results with the pipeline's automated outputs, we validate the metrics computation (including MASE scaling and WIS weighting), ensuring the integrity of our evaluation framework.
+
+%----------------------------------------------------------------------------------------
+%	SECTION 7: SEASONAL PEAK ANALYSIS
+%----------------------------------------------------------------------------------------
+
+\section{Seasonal Peak Analysis}
+
+Epidemic peaks correspond to periods of maximum incidence, representing the highest stress on healthcare infrastructure. Accurate forecasting of both peak timing and intensity is critical for operational planning, including hospital bed capacity allocation and the scheduling of public health campaigns. For each season $S$, the evaluation window is defined from October 1st to June 1st of the subsequent year, encompassing the active transmission period. The peak evaluation engine dynamically scans regional data to locate active seasons and computes peak metrics exclusively for periods where surveillance data is available.
+
+%-----------------------------------
+%	SUBSECTION 7.1: PEAK TIMING ERROR (PTE)
+%-----------------------------------
+\subsection{Peak Timing Error (PTE)}
+The Peak Timing Error (PTE) measures the temporal deviation (in weeks) between the predicted and observed peak dates for a given season $S$. Let $t_{\text{peak}, S}$ and $\hat{t}_{\text{peak}, S}$ denote the observed and predicted peak weeks, defined respectively as:
+\begin{align}
+t_{\text{peak}, S} &= \operatorname{argmax}_{t \in S} y_t \\
+\hat{t}_{\text{peak}, S} &= \operatorname{argmax}_{t \in S} \hat{y}_t
+\end{align}
+The PTE is then defined as:
+\begin{equation}
+\text{PTE}_S = \hat{t}_{\text{peak}, S} - t_{\text{peak}, S}
+\end{equation}
+A negative PTE indicates a premature peak prediction (early), whereas a positive PTE indicates a delayed peak prediction (late).
+
+%-----------------------------------
+%	SUBSECTION 7.2: PEAK INTENSITY ERROR (PIE)
+%-----------------------------------
+\subsection{Peak Intensity Error (PIE)}
+The Peak Intensity Error (PIE) measures the difference in magnitude between the predicted and observed peak incidence rates, evaluated in both absolute and relative terms:
+\begin{itemize}
+    \item \textbf{Absolute PIE:}
+    \begin{equation}
+    \text{PIE}_{\text{abs}, S} = \left| \max_{t \in S} \hat{y}_t - \max_{t \in S} y_t \right|
+    \end{equation}
+    \item \textbf{Relative PIE:}
+    \begin{equation}
+    \text{PIE}_{\text{rel}, S} = \frac{\max_{t \in S} \hat{y}_t - \max_{t \in S} y_t}{\max_{t \in S} y_t}
+    \end{equation}
+\end{itemize}
+The relative PIE normalizes intensity errors across regions with heterogeneous population sizes, providing a scale-free percentage metric for comparative analysis.
+
+We compute peak metrics across two distinct configurations:
+\begin{enumerate}
+    \item \textbf{Horizon-Specific:} Peak parameters are evaluated on forecasts generated at a fixed lead time (e.g., $h=4$ weeks ahead). This configuration assesses how early a model can anticipate the peak.
+    \item \textbf{Latest Forecast:} Peak parameters are evaluated using the most recent forecasts available for each week (typically corresponding to the shortest lead time). This configuration represents our best operational estimate as the season progresses.
+\end{enumerate}
